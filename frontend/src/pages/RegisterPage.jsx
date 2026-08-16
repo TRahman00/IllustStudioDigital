@@ -1,34 +1,41 @@
-import React, { useState } from 'react';
-import api from '../services/api';
+import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext.jsx';
 
-const RegisterPage = () => {
-  const [form, setForm] = useState({ name: '', email: '', password: '', location: '', phone: '' });
+export default function RegisterPage() {
+  const { register } = useAuth();
+  const navigate = useNavigate();
+  const [form, setForm] = useState({ name: '', email: '', password: '' });
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
 
-  const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
-
-  const handleSubmit = async (e) => {
+  async function onSubmit(e) {
     e.preventDefault();
-    try {
-      const res = await api.post('/auth/register', form);
-      alert(res.data.message);
-    } catch (err) {
-      alert('Registration failed: ' + (err.response?.data?.message || err.message));
-    }
-  };
+    setError(''); setBusy(true);
+    try { await register(form); navigate('/studio'); }
+    catch (err) { setError(err.response?.data?.message || 'Something went wrong.'); }
+    finally { setBusy(false); }
+  }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <form onSubmit={handleSubmit} className="bg-white p-8 rounded shadow-md w-96">
-        <h2 className="text-2xl font-bold mb-6">Register</h2>
-        <input name="name" placeholder="Name" value={form.name} onChange={handleChange} className="w-full p-2 border rounded mb-4" required />
-        <input name="email" type="email" placeholder="Email" value={form.email} onChange={handleChange} className="w-full p-2 border rounded mb-4" required />
-        <input name="password" type="password" placeholder="Password" value={form.password} onChange={handleChange} className="w-full p-2 border rounded mb-4" required />
-        <input name="location" placeholder="Location" value={form.location} onChange={handleChange} className="w-full p-2 border rounded mb-4" />
-        <input name="phone" placeholder="Phone" value={form.phone} onChange={handleChange} className="w-full p-2 border rounded mb-4" />
-        <button type="submit" className="w-full bg-green-500 text-white p-2 rounded">Register</button>
-      </form>
+    <div className="min-h-screen flex items-center justify-center px-5">
+      <div className="w-full max-w-sm">
+        <div className="flex items-center gap-2 mb-8 justify-center">
+          <span className="w-8 h-8 rounded-full bg-teal-600 text-white flex items-center justify-center text-xs font-display">IS</span>
+          <span className="font-display font-semibold text-lg">Illust Studio</span>
+        </div>
+        <h1 className="text-xl font-semibold mb-6 text-center">Create your account</h1>
+        <form onSubmit={onSubmit} className="flex flex-col gap-3">
+          <input className="input" placeholder="Full name" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          <input className="input" type="email" placeholder="Email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+          <input className="input" type="password" placeholder="Password (min 8 characters)" required minLength={8} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+          {error && <p className="text-sm text-red-500">{error}</p>}
+          <button disabled={busy} className="btn btn-primary">{busy ? 'Creating account…' : 'Create free account'}</button>
+        </form>
+        <p className="text-sm text-neutral-500 mt-4 text-center">
+          Already have an account? <Link to="/login" className="text-teal-600 font-medium">Sign in</Link>
+        </p>
+      </div>
     </div>
   );
-};
-
-export default RegisterPage;
+}

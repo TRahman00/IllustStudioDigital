@@ -1,38 +1,32 @@
-const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
+import mongoose from 'mongoose';
+import bcrypt from 'bcryptjs';
 
 const userSchema = new mongoose.Schema(
   {
-    name: { type: String, required: true },
-    email: { type: String, required: true, unique: true, lowercase: true },
-    passwordHash: { type: String, required: true },
+    name: { type: String, required: true, trim: true },
+    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    password: { type: String, required: true, minlength: 8 },
     role: { type: String, enum: ['artist', 'admin'], default: 'artist' },
-    isVerified: { type: Boolean, default: false },
-    verificationToken: String,
-    location: String,
-    phone: String,
-    profilePicture: String,
-    isSuspended: { type: Boolean, default: false },
-    suspensionReason: String,
+    status: { type: String, enum: ['active', 'suspended'], default: 'active' },
+    plan: { type: String, enum: ['free', 'premium'], default: 'free' },
     loyaltyPoints: { type: Number, default: 0 },
-    subscription: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Subscription',
-    },
   },
   { timestamps: true }
 );
 
-// Hash password before saving
 userSchema.pre('save', async function (next) {
-  if (!this.isModified('passwordHash')) return next();
-  this.passwordHash = await bcrypt.hash(this.passwordHash, 12);
+  if (!this.isModified('password')) return next();
+  this.password = await bcrypt.hash(this.password, 10);
   next();
 });
 
-// Compare password method
-userSchema.methods.comparePassword = function (candidatePassword) {
-  return bcrypt.compare(candidatePassword, this.passwordHash);
+userSchema.methods.comparePassword = function (candidate) {
+  return bcrypt.compare(candidate, this.password);
 };
 
-module.exports = mongoose.model('User', userSchema);
+userSchema.methods.toSafeObject = function () {
+  const { _id, name, email, role, status, plan, loyaltyPoints, createdAt } = this;
+  return { id: _id, name, email, role, status, plan, loyaltyPoints, createdAt };
+};
+
+export default mongoose.model('User', userSchema);
