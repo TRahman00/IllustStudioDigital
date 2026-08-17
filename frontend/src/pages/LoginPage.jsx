@@ -12,7 +12,7 @@ export default function LoginPage() {
   async function onSubmit(e) {
     e.preventDefault();
     setError(''); setBusy(true);
-    try { await login(form); navigate('/studio'); }
+    try { await login(form); navigate('/dashboard'); }
     catch (err) { setError(err.response?.data?.message || 'Something went wrong.'); }
     finally { setBusy(false); }
   }

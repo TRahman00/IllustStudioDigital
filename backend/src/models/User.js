@@ -10,6 +10,9 @@ const userSchema = new mongoose.Schema(
     status: { type: String, enum: ['active', 'suspended'], default: 'active' },
     plan: { type: String, enum: ['free', 'premium'], default: 'free' },
     loyaltyPoints: { type: Number, default: 0 },
+    handle: { type: String, unique: true, sparse: true, trim: true, lowercase: true },
+    bio: { type: String, default: '', maxlength: 280 },
+    profilePicture: { type: String, default: '' },
   },
   { timestamps: true }
 );

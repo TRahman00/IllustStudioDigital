@@ -12,7 +12,7 @@ export default function RegisterPage() {
   async function onSubmit(e) {
     e.preventDefault();
     setError(''); setBusy(true);
-    try { await register(form); navigate('/studio'); }
+    try { await register(form); navigate('/dashboard'); }
     catch (err) { setError(err.response?.data?.message || 'Something went wrong.'); }
     finally { setBusy(false); }
   }
