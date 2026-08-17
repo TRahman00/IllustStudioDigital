@@ -9,7 +9,7 @@ import { handleWebhook } from './src/controllers/subscriptionController.js';
 
 import authRoutes from './src/routes/authRoutes.js';
 import projectRoutes from './src/routes/projectRoutes.js';
-import subscriptionRoutes from './src/routes/subscriptionRoutes.js';
+import pricingRoutes from './src/routes/pricingRoutes.js';
 import aiRoutes from './src/routes/aiRoutes.js';
 import cadRoutes from './src/routes/cadRoutes.js';
 import { notFound, errorHandler } from './src/middleware/errorHandler.js';
@@ -31,7 +31,7 @@ app.use('/api', rateLimit({ windowMs: 15 * 60 * 1000, max: 300 }));
 app.get('/api/health', (req, res) => res.json({ ok: true, service: 'illust-studio-api' }));
 app.use('/api/auth', authRoutes);
 app.use('/api/projects', projectRoutes);
-app.use('/api/subscription', subscriptionRoutes);
+app.use('/api/pricing', pricingRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/cad', cadRoutes);
 

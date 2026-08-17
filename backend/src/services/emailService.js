@@ -1,24 +1,56 @@
 import nodemailer from 'nodemailer';
 
-let transporter = null;
-if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
-  transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
-  });
-}
-
-async function send(to, subject, html) {
-  if (!transporter) {
-    console.log(`[emailService] Skipped "${subject}" to ${to} — set GMAIL_USER/GMAIL_APP_PASSWORD in .env to enable sending.`);
-    return;
+// Configure email transport service (using SMTP details from .env)
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
   }
-  await transporter.sendMail({ from: `"Illust Studio" <${process.env.GMAIL_USER}>`, to, subject, html });
-}
+});
 
-export function sendWelcomeEmail(user) {
-  return send(user.email, 'Welcome to Illust Studio', `<p>Hi ${user.name}, your account is ready.</p>`);
-}
-export function sendReceiptEmail(user, amount, plan) {
-  return send(user.email, 'Your Illust Studio receipt', `<p>Thanks for subscribing to ${plan}. Charged $${amount}.</p>`);
-}
+// Function to send subscription receipt email
+export const sendReceiptEmail = async (userEmail, userName, plan, amount) => {
+  try {
+    const mailOptions = {
+      from: `"IllustStudio" <${process.env.EMAIL_USER}>`,
+      to: userEmail,
+      subject: 'Payment Confirmation - IllustStudio Premium',
+      html: `
+        <h2>Thank you for subscribing, ${userName}!</h2>
+        <p>Your payment for the <strong>${plan.toUpperCase()}</strong> plan was successful.</p>
+        <p><strong>Amount Paid:</strong> $${amount}</p>
+        <p>You now have full access to Premium Canvas, Unlimited Generation, and AI Rigging tools!</p>
+        <br/>
+        <p>Best regards,<br/>The IllustStudio Team</p>
+      `
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log(`Receipt email sent to ${userEmail}`);
+  } catch (error) {
+    console.error('Failed to send receipt email:', error.message);
+  }
+};
+
+// Function to send welcome email (যেটি আপনার কন্ট্রোলারে খোঁজা হচ্ছিল)
+export const sendWelcomeEmail = async (userEmail, userName) => {
+  try {
+    const mailOptions = {
+      from: `"IllustStudio" <${process.env.EMAIL_USER}>`,
+      to: userEmail,
+      subject: 'Welcome to IllustStudio!',
+      html: `
+        <h2>Welcome to IllustStudio, ${userName}!</h2>
+        <p>We are excited to have you on board.</p>
+        <br/>
+        <p>Best regards,<br/>The IllustStudio Team</p>
+      `
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log(`Welcome email sent to ${userEmail}`);
+  } catch (error) {
+    console.error('Failed to send welcome email:', error.message);
+  }
+};

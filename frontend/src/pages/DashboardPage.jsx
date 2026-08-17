@@ -57,10 +57,10 @@ export default function DashboardPage() {
             🚀 Launch new project
           </button>
           <button
-            onClick={() => navigate('/subscription')}
+            onClick={() => navigate('/Pricing')}
             className="w-full px-4 py-3 rounded-lg bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 font-medium hover:bg-neutral-200 dark:hover:bg-neutral-700 transition text-left"
           >
-            💳 Subscription
+            💳 Pricing
           </button>
           <button
             onClick={() => setSettingsOpen(true)}
