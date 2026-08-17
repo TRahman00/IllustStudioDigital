@@ -1,0 +1,19 @@
+frontend/
+│
+├── src/
+│   ├── components/
+│   │   ├── Header.jsx
+│   │   ├── Toolbar.jsx
+│   │   ├── LeftSidebar.jsx
+│   │   ├── Canvas.jsx
+│   │   └── PropertiesPanel.jsx
+│   │
+│   ├── App.jsx
+│   ├── main.jsx
+│   └── index.css
+│
+├── index.html
+├── package.json
+├── tailwind.config.js
+├── postcss.config.js
+└── vite.config.js

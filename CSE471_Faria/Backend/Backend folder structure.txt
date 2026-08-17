@@ -1,0 +1,15 @@
+backend/
+│
+├── controllers/
+│   └── artworkController.js
+│
+├── models/
+│   └── Artwork.js
+│
+├── routes/
+│   └── artworkRoutes.js
+│
+├── .env
+├── .env.example
+├── package.json
+└── server.js
