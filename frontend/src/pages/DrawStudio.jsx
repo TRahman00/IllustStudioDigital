@@ -26,7 +26,7 @@ function getCanvasPos(e, canvasEl) {
   return { x: (e.clientX - rect.left) * (canvasEl.width / rect.width), y: (e.clientY - rect.top) * (canvasEl.height / rect.height) };
 }
 
-export default function DrawStudio() {
+export default function DrawStudio({ projectId }) {
   const [tool, setTool] = useState('brush');
   const [color, setColor] = useState('#14B8A6');
   const [size, setSize] = useState(14);
@@ -177,7 +177,6 @@ export default function DrawStudio() {
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     return () => { overlay.removeEventListener('pointerdown', onDown); window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeLayerId]);
 
   useEffect(() => {
@@ -229,8 +228,56 @@ export default function DrawStudio() {
     finally { setSaving(false); }
   }
 
-  useEffect(() => { addLayer('Layer 1'); /* eslint-disable-next-line */ }, []);
+  useEffect(() => {
+    if (projectId && projectId !== 'new') {
+      const loadProject = async () => {
+        try {
+          const res = await client.get(`/projects/${projectId}`);
+          const project = res.data.project;
 
+          layersRef.current = [];
+
+          project.layers.forEach((layerData) => {
+            const canvas = document.createElement('canvas');
+            canvas.width = project.width || DRAW_W;
+            canvas.height = project.height || DRAW_H;
+            const ctx = canvas.getContext('2d');
+
+            const img = new Image();
+            img.onload = () => {
+              ctx.drawImage(img, 0, 0);
+            };
+            img.src = layerData.dataUrl; 
+
+            const layer = {
+              id: 'L' + layerCounterRef.current++,
+              name: layerData.name || 'Layer',
+              canvas,
+              ctx,
+              visible: layerData.visible !== undefined ? layerData.visible : true,
+              opacity: layerData.opacity || 1,
+            };
+            layersRef.current.push(layer);
+          });
+
+          if (layersRef.current.length > 0) {
+            setActiveLayerId(layersRef.current[layersRef.current.length - 1].id);
+          }
+
+          renderLayerStack();
+          setLayersVersion(v => v + 1);
+        } catch (err) {
+          console.error('Failed to load project', err);
+          setNotice('Could not load project');
+        }
+      };
+      loadProject();
+    } else {
+      if (layersRef.current.length === 0) {
+        addLayer('Layer 1');
+      }
+    }
+  }, [projectId]); 
   const layersForUI = [...layersRef.current].reverse();
   const iconBtn = 'w-4 h-4';
 
