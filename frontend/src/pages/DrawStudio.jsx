@@ -20,14 +20,22 @@ const SHAPE_TOOLS = [
   { id: 'line', Icon: LineIcon },
 ];
 
+const HANDLE_HIT_RADIUS = 10;
+const ROTATE_STALK = 28;
+const MAX_SKEW_RAD = 1.3; // ~74.5°
+const MIN_SCALE = 0.05;
+const CORNER_SIGN = {
+  'scale-tl': [-1, -1], 'scale-tr': [1, -1], 'scale-bl': [-1, 1], 'scale-br': [1, 1],
+};
+
 function normRect(a, b) { return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) }; }
 function getCanvasPos(e, canvasEl) {
   const rect = canvasEl.getBoundingClientRect();
   return { x: (e.clientX - rect.left) * (canvasEl.width / rect.width), y: (e.clientY - rect.top) * (canvasEl.height / rect.height) };
 }
 
-export default function DrawStudio({ projectId }) {
-  const [tool, setTool] = useState('brush');
+export default function DrawStudio() {
+  const [tool, setToolState] = useState('brush');
   const [color, setColor] = useState('#14B8A6');
   const [size, setSize] = useState(14);
   const [shapeFill, setShapeFill] = useState(true);
@@ -36,6 +44,7 @@ export default function DrawStudio({ projectId }) {
   const [activeLayerId, setActiveLayerId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState('');
+  const [hasSelection, setHasSelection] = useState(false);
 
   const toolRef = useRef(tool), colorRef = useRef(color), sizeRef = useRef(size), shapeFillRef = useRef(shapeFill);
   useEffect(() => { toolRef.current = tool; }, [tool]);
@@ -52,9 +61,20 @@ export default function DrawStudio({ projectId }) {
   const startPosRef = useRef(null);
   const lastPosRef = useRef(null);
 
+  // --- transform-tool state (refs so pointer handlers always see the latest values) ---
+  const transformSelRef = useRef(null); // { rect:{x,y,w,h}, source: canvas, layer, t:{tx,ty,rotation,skewX,skewY,scaleX,scaleY} }
+  const dragModeRef = useRef(null);     // 'marquee' | 'move' | 'rotate' | 'scale-tl'|... | 'skewx-top'|...
+  const dragStartRef = useRef(null);
+
   const drawUM = useUndoManager();
 
   function activeLayer() { return layersRef.current.find((l) => l.id === activeLayerId); }
+
+  function setTool(id) {
+    // switching away from select while a transform is in progress bakes it in first
+    if (tool === 'select' && id !== 'select' && transformSelRef.current) commitTransform();
+    setToolState(id);
+  }
 
   function renderLayerStack() {
     const mount = layersMountRef.current;
@@ -143,46 +163,247 @@ export default function DrawStudio({ projectId }) {
     else if (t === 'line') { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
   }
 
+  // ============================= TRANSFORM TOOL =============================
+  function getCenter(sel) { return { x: sel.rect.x + sel.rect.w / 2 + sel.t.tx, y: sel.rect.y + sel.rect.h / 2 + sel.t.ty }; }
+
+  // translate + rotate only — used as the fixed reference frame while dragging a handle
+  function getBaseMatrix(sel) {
+    const c = getCenter(sel);
+    let m = new DOMMatrix();
+    m = m.translate(c.x, c.y);
+    m = m.rotate((sel.t.rotation * 180) / Math.PI);
+    return m;
+  }
+  // full transform: translate * rotate * skew * scale — used for rendering + handle placement
+  function getFullMatrix(sel) {
+    const { skewX, skewY, scaleX, scaleY } = sel.t;
+    let m = getBaseMatrix(sel);
+    m = m.multiply(new DOMMatrix([1, Math.tan(skewY), Math.tan(skewX), 1, 0, 0]));
+    m = m.scale(scaleX, scaleY);
+    return m;
+  }
+  function computeHandlePoints(sel) {
+    const m = getFullMatrix(sel);
+    const hw = sel.rect.w / 2, hh = sel.rect.h / 2;
+    const pt = (x, y) => { const p = m.transformPoint(new DOMPoint(x, y)); return { x: p.x, y: p.y }; };
+    const tl = pt(-hw, -hh), tr = pt(hw, -hh), bl = pt(-hw, hh), br = pt(hw, hh);
+    const topMid = pt(0, -hh), bottomMid = pt(0, hh), leftMid = pt(-hw, 0), rightMid = pt(hw, 0);
+    const base = getBaseMatrix(sel);
+    const o = base.transformPoint(new DOMPoint(0, 0));
+    const u = base.transformPoint(new DOMPoint(0, -1));
+    const dx = u.x - o.x, dy = u.y - o.y, len = Math.hypot(dx, dy) || 1;
+    const rotate = { x: topMid.x + (dx / len) * ROTATE_STALK, y: topMid.y + (dy / len) * ROTATE_STALK };
+    return { tl, tr, bl, br, topMid, bottomMid, leftMid, rightMid, rotate };
+  }
+  function hitTestHandles(pos, sel) {
+    const hp = computeHandlePoints(sel);
+    const checks = [
+      ['scale-tl', hp.tl], ['scale-tr', hp.tr], ['scale-bl', hp.bl], ['scale-br', hp.br],
+      ['skewx-top', hp.topMid], ['skewx-bottom', hp.bottomMid],
+      ['skewy-left', hp.leftMid], ['skewy-right', hp.rightMid],
+      ['rotate', hp.rotate],
+    ];
+    for (const [name, p] of checks) { if (Math.hypot(pos.x - p.x, pos.y - p.y) <= HANDLE_HIT_RADIUS) return name; }
+    return null;
+  }
+  function isInsideSelection(pos, sel) {
+    const inv = getFullMatrix(sel).inverse();
+    const l = inv.transformPoint(new DOMPoint(pos.x, pos.y));
+    return Math.abs(l.x) <= sel.rect.w / 2 && Math.abs(l.y) <= sel.rect.h / 2;
+  }
+  function captureDragStart(hit, pos, sel) {
+    return { hit, pos, t0: { ...sel.t }, baseInverse: getBaseMatrix(sel).inverse(), center: getCenter(sel) };
+  }
+  function applyDrag(mode, pos, shiftKey) {
+    const sel = transformSelRef.current; const ds = dragStartRef.current;
+    if (!sel || !ds) return;
+    const { t0, baseInverse, center } = ds;
+    if (mode === 'move') {
+      sel.t.tx = t0.tx + (pos.x - ds.pos.x);
+      sel.t.ty = t0.ty + (pos.y - ds.pos.y);
+      return;
+    }
+    if (mode === 'rotate') {
+      const a0 = Math.atan2(ds.pos.y - center.y, ds.pos.x - center.x);
+      const a1 = Math.atan2(pos.y - center.y, pos.x - center.x);
+      sel.t.rotation = t0.rotation + (a1 - a0);
+      return;
+    }
+    const local = baseInverse.transformPoint(new DOMPoint(pos.x, pos.y));
+    const hw = sel.rect.w / 2, hh = sel.rect.h / 2;
+    if (CORNER_SIGN[mode]) {
+      const [sx, sy] = CORNER_SIGN[mode];
+      let newScaleX = local.x / (sx * hw);
+      let newScaleY = local.y / (sy * hh);
+      if (shiftKey) {
+        const u = Math.max(Math.abs(newScaleX), Math.abs(newScaleY));
+        newScaleX = Math.sign(newScaleX || 1) * u;
+        newScaleY = Math.sign(newScaleY || 1) * u;
+      }
+      const clamp = (v) => (Math.abs(v) < MIN_SCALE ? MIN_SCALE * Math.sign(v || 1) : v);
+      sel.t.scaleX = clamp(newScaleX);
+      sel.t.scaleY = clamp(newScaleY);
+      return;
+    }
+    if (mode === 'skewx-top' || mode === 'skewx-bottom') {
+      const sy = mode === 'skewx-top' ? -1 : 1;
+      const denom = sy * t0.scaleY * hh;
+      const ang = Math.max(-MAX_SKEW_RAD, Math.min(MAX_SKEW_RAD, Math.atan(local.x / denom)));
+      sel.t.skewX = ang;
+      return;
+    }
+    if (mode === 'skewy-left' || mode === 'skewy-right') {
+      const sx = mode === 'skewy-left' ? -1 : 1;
+      const denom = sx * t0.scaleX * hw;
+      const ang = Math.max(-MAX_SKEW_RAD, Math.min(MAX_SKEW_RAD, Math.atan(local.y / denom)));
+      sel.t.skewY = ang;
+      return;
+    }
+  }
+  function renderTransformOverlay() {
+    const sel = transformSelRef.current;
+    const ctx = overlayRef.current.getContext('2d');
+    ctx.clearRect(0, 0, DRAW_W, DRAW_H);
+    if (!sel) return;
+    const m = getFullMatrix(sel);
+    ctx.save();
+    ctx.setTransform(m.a, m.b, m.c, m.d, m.e, m.f);
+    ctx.drawImage(sel.source, -sel.rect.w / 2, -sel.rect.h / 2, sel.rect.w, sel.rect.h);
+    ctx.restore();
+
+    const hp = computeHandlePoints(sel);
+    ctx.save();
+    ctx.strokeStyle = '#14B8A6'; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]);
+    ctx.beginPath(); ctx.moveTo(hp.tl.x, hp.tl.y); ctx.lineTo(hp.tr.x, hp.tr.y); ctx.lineTo(hp.br.x, hp.br.y); ctx.lineTo(hp.bl.x, hp.bl.y); ctx.closePath(); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(hp.topMid.x, hp.topMid.y); ctx.lineTo(hp.rotate.x, hp.rotate.y); ctx.stroke();
+    ctx.restore();
+
+    const drawHandle = (p, shape) => {
+      ctx.save();
+      ctx.fillStyle = '#fff'; ctx.strokeStyle = '#14B8A6'; ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      if (shape === 'circle') ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+      else ctx.rect(p.x - 5, p.y - 5, 10, 10);
+      ctx.fill(); ctx.stroke();
+      ctx.restore();
+    };
+    [hp.tl, hp.tr, hp.bl, hp.br, hp.topMid, hp.bottomMid, hp.leftMid, hp.rightMid].forEach((p) => drawHandle(p, 'square'));
+    drawHandle(hp.rotate, 'circle');
+  }
+  function liftSelection(r) {
+    const layer = activeLayer(); if (!layer) return;
+    const rx = Math.max(0, Math.round(r.x)), ry = Math.max(0, Math.round(r.y));
+    const rw = Math.min(DRAW_W - rx, Math.round(r.w)), rh = Math.min(DRAW_H - ry, Math.round(r.h));
+    if (rw < 2 || rh < 2) return;
+    drawUM.push(layer.canvas); // undo restores the original, un-lifted pixels
+    const snap = document.createElement('canvas'); snap.width = rw; snap.height = rh;
+    snap.getContext('2d').drawImage(layer.canvas, rx, ry, rw, rh, 0, 0, rw, rh);
+    layer.ctx.clearRect(rx, ry, rw, rh);
+    transformSelRef.current = {
+      rect: { x: rx, y: ry, w: rw, h: rh },
+      source: snap,
+      layer,
+      t: { tx: 0, ty: 0, rotation: 0, skewX: 0, skewY: 0, scaleX: 1, scaleY: 1 },
+    };
+    setHasSelection(true);
+    renderTransformOverlay();
+  }
+  function commitTransform() {
+    const sel = transformSelRef.current; if (!sel) return;
+    const m = getFullMatrix(sel);
+    drawUM.push(sel.layer.canvas); // undo restores the just-cleared, pre-paste state
+    const ctx = sel.layer.ctx;
+    ctx.save();
+    ctx.setTransform(m.a, m.b, m.c, m.d, m.e, m.f);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(sel.source, -sel.rect.w / 2, -sel.rect.h / 2, sel.rect.w, sel.rect.h);
+    ctx.restore();
+    transformSelRef.current = null;
+    setHasSelection(false);
+    clearOverlay();
+  }
+  function cancelTransform() {
+    if (!transformSelRef.current) return;
+    drawUM.undo(); // pops back to the state captured just before the lift
+    transformSelRef.current = null;
+    setHasSelection(false);
+    clearOverlay();
+  }
+  // ============================ /TRANSFORM TOOL ==============================
+
   useEffect(() => {
     const overlay = overlayRef.current;
     function onDown(e) {
       const pos = getCanvasPos(e, overlay);
       isPointerDownRef.current = true; startPosRef.current = pos; lastPosRef.current = pos;
-      const t = toolRef.current, layer = activeLayer(); if (!layer) return;
+      const t = toolRef.current;
+
+      if (t === 'select') {
+        const sel = transformSelRef.current;
+        if (sel) {
+          const hit = hitTestHandles(pos, sel);
+          if (hit) { dragModeRef.current = hit; dragStartRef.current = captureDragStart(hit, pos, sel); return; }
+          if (isInsideSelection(pos, sel)) { dragModeRef.current = 'move'; dragStartRef.current = { pos, t0: { ...sel.t } }; return; }
+          commitTransform();
+        }
+        dragModeRef.current = 'marquee';
+        return;
+      }
+
+      const layer = activeLayer(); if (!layer) return;
       if (['brush', 'pencil', 'airbrush', 'eraser'].includes(t)) { drawUM.push(layer.canvas); drawDab(layer.ctx, pos, pos, t); }
       else if (['rect', 'ellipse', 'line'].includes(t)) { clearOverlay(); }
-      else if (t === 'select') { drawUM.push(layer.canvas); clearOverlay(); }
     }
     function onMove(e) {
       if (!isPointerDownRef.current) return;
       const pos = getCanvasPos(e, overlay);
-      const t = toolRef.current, layer = activeLayer();
+      const t = toolRef.current;
+
+      if (t === 'select') {
+        if (dragModeRef.current === 'marquee') { clearOverlay(); drawMarqueePreview(overlay.getContext('2d'), startPosRef.current, pos); return; }
+        if (dragModeRef.current) { applyDrag(dragModeRef.current, pos, e.shiftKey); renderTransformOverlay(); }
+        return;
+      }
+
+      const layer = activeLayer();
       if (['brush', 'pencil', 'airbrush', 'eraser'].includes(t)) { if (layer) { drawDab(layer.ctx, lastPosRef.current, pos, t); lastPosRef.current = pos; } }
       else if (['rect', 'ellipse', 'line'].includes(t)) { clearOverlay(); drawShapePreview(overlay.getContext('2d'), startPosRef.current, pos, t); }
-      else if (t === 'select') { clearOverlay(); drawMarqueePreview(overlay.getContext('2d'), startPosRef.current, pos); }
     }
     function onUp(e) {
       if (!isPointerDownRef.current) return;
       isPointerDownRef.current = false;
       const pos = getCanvasPos(e, overlay);
-      const t = toolRef.current, layer = activeLayer();
-      if (['rect', 'ellipse', 'line'].includes(t) && layer) { clearOverlay(); commitShape(layer.ctx, startPosRef.current, pos, t); }
-      else if (t === 'select' && layer) {
-        clearOverlay();
-        const r = normRect(startPosRef.current, pos);
-        if (r.w > 2 && r.h > 2) layer.ctx.clearRect(r.x, r.y, r.w, r.h);
+      const t = toolRef.current;
+
+      if (t === 'select') {
+        if (dragModeRef.current === 'marquee') {
+          clearOverlay();
+          const r = normRect(startPosRef.current, pos);
+          if (r.w > 4 && r.h > 4) liftSelection(r);
+        }
+        dragModeRef.current = null;
+        return;
       }
+
+      const layer = activeLayer();
+      if (['rect', 'ellipse', 'line'].includes(t) && layer) { clearOverlay(); commitShape(layer.ctx, startPosRef.current, pos, t); }
     }
     overlay.addEventListener('pointerdown', onDown);
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     return () => { overlay.removeEventListener('pointerdown', onDown); window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeLayerId]);
 
   useEffect(() => {
     function onKey(e) {
       const tag = document.activeElement?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (transformSelRef.current) {
+        if (e.key === 'Enter') { e.preventDefault(); commitTransform(); return; }
+        if (e.key === 'Escape') { e.preventDefault(); cancelTransform(); return; }
+      }
       if (e.ctrlKey || e.metaKey) {
         if (e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); drawUM.undo(); return; }
         if ((e.key.toLowerCase() === 'z' && e.shiftKey) || e.key.toLowerCase() === 'y') { e.preventDefault(); drawUM.redo(); return; }
@@ -194,7 +415,8 @@ export default function DrawStudio({ projectId }) {
     }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [drawUM]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drawUM, tool]);
 
   useEffect(() => { if (stageInnerRef.current) stageInnerRef.current.style.transform = `scale(${zoom})`; }, [zoom]);
 
@@ -213,6 +435,7 @@ export default function DrawStudio({ projectId }) {
     });
   }
   async function save() {
+    if (transformSelRef.current) commitTransform();
     setSaving(true); setNotice('');
     try {
       const thumbCanvas = document.createElement('canvas'); thumbCanvas.width = 240; thumbCanvas.height = 160;
@@ -228,56 +451,8 @@ export default function DrawStudio({ projectId }) {
     finally { setSaving(false); }
   }
 
-  useEffect(() => {
-    if (projectId && projectId !== 'new') {
-      const loadProject = async () => {
-        try {
-          const res = await client.get(`/projects/${projectId}`);
-          const project = res.data.project;
+  useEffect(() => { addLayer('Layer 1'); /* eslint-disable-next-line */ }, []);
 
-          layersRef.current = [];
-
-          project.layers.forEach((layerData) => {
-            const canvas = document.createElement('canvas');
-            canvas.width = project.width || DRAW_W;
-            canvas.height = project.height || DRAW_H;
-            const ctx = canvas.getContext('2d');
-
-            const img = new Image();
-            img.onload = () => {
-              ctx.drawImage(img, 0, 0);
-            };
-            img.src = layerData.dataUrl; 
-
-            const layer = {
-              id: 'L' + layerCounterRef.current++,
-              name: layerData.name || 'Layer',
-              canvas,
-              ctx,
-              visible: layerData.visible !== undefined ? layerData.visible : true,
-              opacity: layerData.opacity || 1,
-            };
-            layersRef.current.push(layer);
-          });
-
-          if (layersRef.current.length > 0) {
-            setActiveLayerId(layersRef.current[layersRef.current.length - 1].id);
-          }
-
-          renderLayerStack();
-          setLayersVersion(v => v + 1);
-        } catch (err) {
-          console.error('Failed to load project', err);
-          setNotice('Could not load project');
-        }
-      };
-      loadProject();
-    } else {
-      if (layersRef.current.length === 0) {
-        addLayer('Layer 1');
-      }
-    }
-  }, [projectId]); 
   const layersForUI = [...layersRef.current].reverse();
   const iconBtn = 'w-4 h-4';
 
@@ -298,6 +473,17 @@ export default function DrawStudio({ projectId }) {
         <span className="font-mono text-xs w-10 text-center">{Math.round(zoom * 100)}%</span>
         <button className="btn !py-1 !px-2.5 text-xs" onClick={() => setZoomState((z) => Math.min(3, z + 0.1))}>+</button>
         <button className="btn !py-1 text-xs" onClick={() => setZoomState(1)}>Fit</button>
+
+        {hasSelection && (
+          <>
+            <span className="text-[11px] text-neutral-400 hidden lg:inline">
+              Drag corners to scale (Shift = uniform) • edges to skew • top handle to rotate • Enter to commit • Esc to cancel
+            </span>
+            <button className="btn !py-1 text-xs" onClick={cancelTransform}>Cancel</button>
+            <button className="btn btn-primary !py-1 text-xs" onClick={commitTransform}>Commit transform</button>
+          </>
+        )}
+
         <div className="flex-1" />
         {notice && <span className="text-xs text-neutral-500">{notice}</span>}
         <button disabled={saving} className="btn !py-1 text-xs" onClick={save}>{saving ? 'Saving…' : 'Save'}</button>
@@ -320,7 +506,7 @@ export default function DrawStudio({ projectId }) {
             </button>
           ))}
           <div className="w-6 border-t border-neutral-200 dark:border-neutral-800 my-1" />
-          <button title="select" onClick={() => setTool('select')}
+          <button title="select / transform (scale, rotate, skew)" onClick={() => setTool('select')}
             className={`w-10 h-10 rounded-lg flex items-center justify-center ${tool === 'select' ? 'bg-teal-600 text-white' : 'text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}>
             <SelectIcon className="w-4.5 h-4.5" />
           </button>

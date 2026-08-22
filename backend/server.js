@@ -11,8 +11,8 @@ import authRoutes from './src/routes/authRoutes.js';
 import projectRoutes from './src/routes/projectRoutes.js';
 import pricingRoutes from './src/routes/pricingRoutes.js';
 import aiRoutes from './src/routes/aiRoutes.js';
-import cadRoutes from './src/routes/cadRoutes.js';
 import dashboardRoutes from './src/routes/dashboardRoutes.js';
+import cadRoutes from './src/routes/cadRoutes.js';
 
 import { notFound, errorHandler } from './src/middleware/errorHandler.js';
 
