@@ -12,6 +12,8 @@ import projectRoutes from './src/routes/projectRoutes.js';
 import pricingRoutes from './src/routes/pricingRoutes.js';
 import aiRoutes from './src/routes/aiRoutes.js';
 import cadRoutes from './src/routes/cadRoutes.js';
+import dashboardRoutes from './src/routes/dashboardRoutes.js';
+
 import { notFound, errorHandler } from './src/middleware/errorHandler.js';
 
 dotenv.config();
@@ -34,6 +36,8 @@ app.use('/api/projects', projectRoutes);
 app.use('/api/pricing', pricingRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/cad', cadRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+
 
 app.use(notFound);
 app.use(errorHandler);
