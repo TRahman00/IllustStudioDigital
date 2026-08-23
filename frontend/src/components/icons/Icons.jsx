@@ -28,3 +28,4 @@ export const CloseIcon = (p) => <svg viewBox="0 0 24 24" {...base} {...p}><path 
 export const PlusIcon = (p) => <svg viewBox="0 0 24 24" {...base} {...p}><path d="M12 5v14M5 12h14" /></svg>;
 export const ArrowLeftIcon = (p) => <svg viewBox="0 0 24 24" {...base} {...p}><path d="M19 12H5M12 19l-7-7 7-7" /></svg>;
 export const ArrowRightIcon = (p) => <svg viewBox="0 0 24 24" {...base} {...p}><path d="M5 12h14M12 5l7 7-7 7" /></svg>;
+export const HandIcon = (p) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v5" /><path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v6" /><path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8" /><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" /></svg>;

@@ -6,14 +6,24 @@ import client from '../api/client.js';
 import SettingsModal from '../components/SettingsModal.jsx';
 
 export default function DashboardPage() {
-  const { user, logout } = useAuth();
+  const { user, setUser, logout } = useAuth(); // Added setUser
   const { theme, toggle } = useTheme();
   const navigate = useNavigate();
   const [recentWorks, setRecentWorks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [driveMessage, setDriveMessage] = useState('');
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('drive') === 'connected') {
+      setDriveMessage('✅ Successfully connected to Google Drive!');
+      window.location.search = '';
+      client.get('/auth/me').then((res) => setUser(res.data.user)).catch(() => {});
+    } else if (params.get('drive') === 'error') {
+      setDriveMessage('❌ Failed to connect to Google Drive.');
+    }
+
     const fetchWorks = async () => {
       try {
         const res = await client.get('/dashboard/recent-works');
@@ -27,6 +37,13 @@ export default function DashboardPage() {
     fetchWorks();
   }, []);
 
+  // --- UPDATED: Connect to Drive with Token ---
+  const handleConnectDrive = () => {
+    const token = localStorage.getItem('illust_token');
+    if (!token) return alert('Please log in first.');
+    window.location.href = `http://localhost:5000/api/drive/auth?token=${token}`;
+  };
+
   const openProject = (projectId) => navigate(`/studio/${projectId}`);
   const launchNew = () => navigate('/studio/new');
   const handleSignOut = () => {
@@ -36,9 +53,7 @@ export default function DashboardPage() {
 
   return (
     <div className="flex h-screen bg-[#FBFAF6] dark:bg-[#070C0B]">
-      {/* Side Menu – tablet‑style buttons with text */}
       <aside className="w-64 bg-white dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800 flex flex-col p-4 flex-none">
-        {/* Logo / Brand */}
         <div className="flex items-center gap-2 font-display font-semibold text-neutral-800 dark:text-white mb-6 pb-4 border-b border-neutral-200 dark:border-neutral-700">
           <svg viewBox="0 0 30 30" fill="none" className="w-7 h-7">
             <circle cx="15" cy="15" r="14" fill="#128077" />
@@ -48,48 +63,34 @@ export default function DashboardPage() {
           Illust Studio
         </div>
 
-        {/* Main actions */}
         <div className="flex-1 flex flex-col gap-2">
-          <button
-            onClick={launchNew}
-            className="w-full px-4 py-3 rounded-lg bg-teal-600 text-white font-medium hover:bg-teal-700 transition text-left"
-          >
+          <button onClick={launchNew} className="w-full px-4 py-3 rounded-lg bg-teal-600 text-white font-medium hover:bg-teal-700 transition text-left">
             🚀 Launch new project
           </button>
-          <button
-            onClick={() => navigate('/Pricing')}
-            className="w-full px-4 py-3 rounded-lg bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 font-medium hover:bg-neutral-200 dark:hover:bg-neutral-700 transition text-left"
-          >
+          <button onClick={() => navigate('/Pricing')} className="w-full px-4 py-3 rounded-lg bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 font-medium hover:bg-neutral-200 dark:hover:bg-neutral-700 transition text-left">
             💳 Pricing
           </button>
-          <button
-            onClick={() => setSettingsOpen(true)}
-            className="w-full px-4 py-3 rounded-lg bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 font-medium hover:bg-neutral-200 dark:hover:bg-neutral-700 transition text-left"
-          >
+          <button onClick={() => setSettingsOpen(true)} className="w-full px-4 py-3 rounded-lg bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 font-medium hover:bg-neutral-200 dark:hover:bg-neutral-700 transition text-left">
             ⚙️ Settings
           </button>
+
+          <button onClick={handleConnectDrive} className="w-full px-4 py-3 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 transition text-left">
+            {user?.googleConnected ? '☁️ Drive Connected' : '☁️ Connect to Google Drive'}
+          </button>
+          {driveMessage && <p className="text-xs text-center text-neutral-500 mt-2">{driveMessage}</p>}
         </div>
 
-        {/* Bottom: theme toggle + sign out */}
         <div className="pt-4 border-t border-neutral-200 dark:border-neutral-700 flex items-center justify-between">
-          <button
-            onClick={toggle}
-            className="px-4 py-2 rounded-lg bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-teal-400 hover:bg-neutral-200 dark:hover:bg-neutral-700 transition text-sm"
-          >
+          <button onClick={toggle} className="px-4 py-2 rounded-lg bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-teal-400 hover:bg-neutral-200 dark:hover:bg-neutral-700 transition text-sm">
             {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
           </button>
-          <button
-            onClick={handleSignOut}
-            className="px-4 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 transition text-sm font-medium"
-          >
+          <button onClick={handleSignOut} className="px-4 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 transition text-sm font-medium">
             Sign out
           </button>
         </div>
       </aside>
 
-      {/* Main Content – unchanged */}
       <main className="flex-1 overflow-y-auto p-8">
-        {/* Profile Section */}
         <div className="flex items-start gap-6 mb-8">
           <div className="w-24 h-24 rounded-full bg-teal-100 dark:bg-teal-900/40 flex items-center justify-center text-4xl font-semibold text-teal-700 dark:text-teal-300 flex-none">
             {user?.name?.[0] || 'U'}
@@ -114,7 +115,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Recent Works Grid */}
         <div>
           <h3 className="text-lg font-semibold mb-4">Recent Works</h3>
           {loading ? (
@@ -124,11 +124,7 @@ export default function DashboardPage() {
           ) : (
             <div className="grid grid-cols-3 gap-4">
               {recentWorks.map((work) => (
-                <div
-                  key={work._id}
-                  onClick={() => openProject(work._id)}
-                  className="aspect-video bg-neutral-100 dark:bg-neutral-800 rounded-lg overflow-hidden shadow-sm cursor-pointer hover:shadow-md transition group"
-                >
+                <div key={work._id} onClick={() => openProject(work._id)} className="aspect-video bg-neutral-100 dark:bg-neutral-800 rounded-lg overflow-hidden shadow-sm cursor-pointer hover:shadow-md transition group">
                   {work.thumbnail ? (
                     <img src={work.thumbnail} alt={work.title} className="w-full h-full object-cover group-hover:scale-105 transition" />
                   ) : (
@@ -144,7 +140,6 @@ export default function DashboardPage() {
         </div>
       </main>
 
-      {/* Settings Modal */}
       <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );

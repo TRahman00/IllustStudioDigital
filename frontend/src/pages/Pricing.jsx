@@ -1,21 +1,26 @@
 import React, { useState } from 'react';
- import client from '../api/client.js';
+import client from '../api/client.js'; // <-- Import client to call backend
+
 export default function Pricing() {
   const [selectedPlan, setSelectedPlan] = useState('monthly');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const price = selectedPlan === 'monthly' ? 7 : 65;
 
-  const handleFreeTrial = () => alert('🎉 14-Day Free Trial Activated!');
-  
-  const handlePayUsingEmail = () => {
-    const email = prompt('Enter your registered Email ID for payment instructions:');
-    if (email) alert(`Instructions sent to ${email}`);
+  // This triggers the real Stripe checkout session
+  const handleCheckout = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const interval = selectedPlan === 'monthly' ? 'month' : 'year';
+      const res = await client.post('/subscription/checkout', { interval });
+      // Redirect the browser to Stripe's secure payment page
+      window.location.href = res.data.url;
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to start subscription. Please check your Stripe keys.');
+      setLoading(false);
+    }
   };
-
-  const handleResendCode = () => alert('📩 Verification code resent to your email!');
-
-  const handleManualPayment = () => {
-   alert('Stripe/PayPal integration is optional. To test, update this function.');
- };
 
   return (
     <div className="bg-[#0a0d0c] text-white min-h-screen font-sans p-6 md:p-12">
@@ -26,17 +31,7 @@ export default function Pricing() {
             <h1 className="text-3xl font-extrabold text-white">Upgrade to Premium</h1>
             <p className="text-teal-400 text-sm mt-1">Unlock advanced animation features and perks</p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button onClick={handleFreeTrial} className="bg-teal-400 text-black px-4 py-2 rounded-lg text-sm font-semibold hover:bg-teal-300">
-              Free Trial
-            </button>
-            <button onClick={handlePayUsingEmail} className="border border-neutral-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-neutral-800">
-              Pay via Email
-            </button>
-            <button onClick={handleResendCode} className="border border-neutral-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-neutral-800">
-              Resend Code
-            </button>
-          </div>
+          {/* Keep these as they are for the UI */}
         </div>
 
         {/* Pricing Cards Grid */}
@@ -48,9 +43,7 @@ export default function Pricing() {
               <h3 className="text-2xl font-black text-teal-400 mb-4">$0 <span className="text-xs text-gray-400 font-normal">/ month</span></h3>
               <p className="text-sm text-gray-400 mb-6">Basic tools & 15 layers included</p>
             </div>
-            <button disabled className="w-full bg-neutral-800 text-gray-500 font-semibold py-2.5 rounded-lg text-sm cursor-not-allowed">
-              Current Plan
-            </button>
+            <button disabled className="w-full bg-neutral-800 text-gray-500 font-semibold py-2.5 rounded-lg text-sm cursor-not-allowed">Current Plan</button>
           </div>
 
           {/* Monthly Plan */}
@@ -60,10 +53,7 @@ export default function Pricing() {
               <h3 className="text-2xl font-black text-teal-400 mb-4">$7 <span className="text-xs text-gray-400 font-normal">/ month</span></h3>
               <p className="text-sm text-gray-400 mb-6">Extended limits & cloud backup</p>
             </div>
-            <button 
-              onClick={() => setSelectedPlan('monthly')}
-              className={`w-full font-semibold py-2.5 rounded-lg text-sm transition-colors ${selectedPlan === 'monthly' ? 'bg-teal-400 text-black' : 'border border-teal-400 text-teal-400 hover:bg-teal-400/10'}`}
-            >
+            <button onClick={() => setSelectedPlan('monthly')} className={`w-full font-semibold py-2.5 rounded-lg text-sm transition-colors ${selectedPlan === 'monthly' ? 'bg-teal-400 text-black' : 'border border-teal-400 text-teal-400 hover:bg-teal-400/10'}`}>
               {selectedPlan === 'monthly' ? '✓ Selected' : 'Select Monthly'}
             </button>
           </div>
@@ -78,22 +68,21 @@ export default function Pricing() {
               <h3 className="text-2xl font-black text-teal-400 mb-4">$65 <span className="text-xs text-gray-400 font-normal">/ year</span></h3>
               <p className="text-sm text-gray-400 mb-6">Best value for serious creators</p>
             </div>
-            <button 
-              onClick={() => setSelectedPlan('yearly')}
-              className={`w-full font-semibold py-2.5 rounded-lg text-sm transition-colors ${selectedPlan === 'yearly' ? 'bg-teal-400 text-black' : 'border border-teal-400 text-teal-400 hover:bg-teal-400/10'}`}
-            >
+            <button onClick={() => setSelectedPlan('yearly')} className={`w-full font-semibold py-2.5 rounded-lg text-sm transition-colors ${selectedPlan === 'yearly' ? 'bg-teal-400 text-black' : 'border border-teal-400 text-teal-400 hover:bg-teal-400/10'}`}>
               {selectedPlan === 'yearly' ? '✓ Selected' : 'Select Yearly'}
             </button>
           </div>
         </div>
 
-        {/* Dynamic Payment Action */}
+        {/* Dynamic Payment Action - Now REAL Stripe */}
         <div className="text-center bg-[#111818] border border-neutral-800 rounded-xl p-6">
+          {error && <p className="text-red-500 mb-4 text-sm">{error}</p>}
           <button 
-            onClick={handleManualPayment}
+            onClick={handleCheckout}
+            disabled={loading}
             className="bg-teal-400 hover:bg-teal-300 text-black font-bold px-8 py-3.5 rounded-xl text-base transition-colors shadow-lg shadow-teal-400/20"
           >
-            Pay Through PayPal (${price})
+            {loading ? 'Redirecting to Stripe...' : `Pay Through Stripe ($${price})`}
           </button>
         </div>
       </div>
