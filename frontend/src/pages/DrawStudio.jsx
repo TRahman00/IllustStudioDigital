@@ -50,11 +50,6 @@ function getCanvasPos(e, canvasEl) {
   return { x: (e.clientX - rect.left) * (canvasEl.width / rect.width), y: (e.clientY - rect.top) * (canvasEl.height / rect.height) };
 }
 
-export default function DrawStudio({ projectId }) {
-  const [isPanActive, setIsPanActive] = useState(false);
-  const [rotation, setRotation] = useState(0);
-  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
-  const [tool, setTool] = useState('brush');
 export default function DrawStudio() {
   const [tool, setToolState] = useState('brush');
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -83,28 +78,6 @@ export default function DrawStudio() {
   const isPointerDownRef = useRef(false);
   const startPosRef = useRef(null);
   const lastPosRef = useRef(null);
-  const isDragging = useRef(false);
-  const startPos = useRef({ x: 0, y: 0 });
-
-  const handleMouseDown = (e) => {
-    if (isPanActive) {
-      isDragging.current = true;
-      startPos.current = { x: e.clientX - panOffset.x, y: e.clientY - panOffset.y };
-    }
-  };
-
-  const handleMouseMove = (e) => {
-    if (isDragging.current && isPanActive) {
-      setPanOffset({
-        x: e.clientX - startPos.current.x,
-        y: e.clientY - startPos.current.y
-      });
-    }
-  };
-
-  const handleMouseUp = () => {
-    isDragging.current = false;
-  };
   const lastPanPosRef = useRef(null);
 
   const transformSelRef = useRef(null);
@@ -642,35 +615,6 @@ export default function DrawStudio() {
         <span className="font-mono text-xs w-10 text-center">{Math.round(zoom * 100)}%</span>
         <button className="btn !py-1 !px-2.5 text-xs" onClick={() => setZoomState((z) => Math.min(3, z + 0.1))}>+</button>
         <button className="btn !py-1 text-xs" onClick={() => setZoomState(1)}>Fit</button>
-        <button
-  type="button"
-  onClick={(e) => {
-    e.stopPropagation();
-    setIsPanActive(prev => !prev);
-  }}
-  className={`px-3 py-1 rounded text-xs transition ${
-    isPanActive ? 'bg-[#14cba8] text-black font-semibold' : 'bg-neutral-800 text-neutral-300'
-  }`}
->
-  
-  ✋ Pan
-</button>
-
-<button 
-  onClick={() => setRotation(prev => (prev - 90) % 360)} 
-  className="px-3 py-1 bg-neutral-800 hover:bg-[#14cba8] hover:text-black rounded text-xs text-neutral-300 transition"
-  title="Rotate Left"
->
-  ↺ -90°
-</button>
-
-<button 
-  onClick={() => setRotation(prev => (prev + 90) % 360)} 
-  className="px-3 py-1 bg-neutral-800 hover:bg-[#14cba8] hover:text-black rounded text-xs text-neutral-300 transition"
-  title="Rotate Right"
->
-  ↻ +90°
-</button>
 
         <div className="flex items-center gap-2 border-l border-neutral-200 dark:border-neutral-800 pl-3 ml-1">
           <span className="text-xs font-mono uppercase text-neutral-400">Rotate</span>
@@ -719,35 +663,12 @@ export default function DrawStudio() {
           </button>
         </div>
 
-        
-      <div className="flex-1 overflow-auto flex items-center justify-center p-6">
-        <div ref={stageInnerRef}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          className="relative shadow-xl checker" 
-          style={{ 
-            width: DRAW_W, 
-            height: DRAW_H, 
-            transformOrigin: 'center center',
-            transform: `translate(${panOffset.x}px, ${panOffset.y}px) rotate(${rotation}deg)`,
-            transition: isDragging.current ? 'none' : 'transform 0.15s ease-out',
-            cursor: isPanActive ? (isDragging.current ? 'grabbing' : 'grab') : 'default'
-          }}
-        >
-          <div ref={layersMountRef} className="absolute inset-0" />
-          <canvas 
-            ref={overlayRef} 
-            width={DRAW_W} 
-            height={DRAW_H} 
-            className="absolute inset-0" 
-            style={{ 
-              touchAction: 'none',
-              pointerEvents: isPanActive ? 'none' : 'auto'
-            }} 
-          />
+        <div className="flex-1 overflow-auto flex items-center justify-center p-6">
+          <div ref={stageInnerRef} className="relative shadow-xl checker" style={{ width: DRAW_W, height: DRAW_H, transformOrigin: 'center center' }}>
+            <div ref={layersMountRef} className="absolute inset-0" />
+            <canvas ref={overlayRef} width={DRAW_W} height={DRAW_H} className="absolute inset-0" style={{ touchAction: 'none' }} />
+          </div>
         </div>
-      </div>
 
         <div className="w-64 border-l border-neutral-200 dark:border-neutral-800 flex flex-col overflow-y-auto flex-none">
           <div className="p-4 border-b border-neutral-200 dark:border-neutral-800">
