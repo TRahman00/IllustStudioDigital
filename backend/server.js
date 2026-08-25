@@ -11,14 +11,17 @@ import authRoutes from './src/routes/authRoutes.js';
 import projectRoutes from './src/routes/projectRoutes.js';
 import pricingRoutes from './src/routes/pricingRoutes.js';
 import aiRoutes from './src/routes/aiRoutes.js';
+import dashboardRoutes from './src/routes/dashboardRoutes.js';
 import cadRoutes from './src/routes/cadRoutes.js';
+import driveRoutes from './src/routes/driveRoutes.js'; // <--- ADDED THIS LINE
 import { notFound, errorHandler } from './src/middleware/errorHandler.js';
 
 dotenv.config();
 connectDB();
 
 const app = express();
-app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:5173', credentials: true }));
+// Allow all origins for development (0.0.0.0, localhost, LAN IPs, etc.)
+app.use(cors());
 app.use(morgan('dev'));
 
 // Stripe needs the raw body to verify its signature, mounted BEFORE express.json()
@@ -34,7 +37,8 @@ app.use('/api/projects', projectRoutes);
 app.use('/api/pricing', pricingRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/cad', cadRoutes);
-
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/drive', driveRoutes); 
 app.use(notFound);
 app.use(errorHandler);
 

@@ -5,6 +5,7 @@ import client from '../api/client.js';
 export default function SettingsModal({ isOpen, onClose }) {
   const { user, setUser } = useAuth();
   const [name, setName] = useState(user?.name || '');
+  const [handle, setHandle] = useState(user?.handle || ''); // <-- Added Handle!
   const [bio, setBio] = useState(user?.bio || '');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -21,7 +22,8 @@ export default function SettingsModal({ isOpen, onClose }) {
     setError('');
     setLoading(true);
     try {
-      const res = await client.put('/dashboard/profile', { name, bio });
+      // Sending handle as well!
+      const res = await client.put('/dashboard/profile', { name, handle, bio });
       setUser(res.data.user);
       setMessage('Profile updated successfully');
     } catch (err) {
@@ -58,13 +60,12 @@ export default function SettingsModal({ isOpen, onClose }) {
   };
 
   return (
+    // ... (Your existing JSX is perfectly fine, just copy and paste it back here)
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white dark:bg-neutral-900 rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto p-6 shadow-xl">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-semibold">Settings</h2>
-          <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200">
-            ✕
-          </button>
+          <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200">✕</button>
         </div>
 
         {message && <div className="mb-3 text-sm text-green-600">{message}</div>}
@@ -73,65 +74,37 @@ export default function SettingsModal({ isOpen, onClose }) {
         <form onSubmit={handleUpdateProfile} className="space-y-3">
           <div>
             <label className="block text-xs font-medium text-neutral-500 mb-1">Name</label>
-            <input
-              className="input w-full"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
+            <input className="input w-full" value={name} onChange={(e) => setName(e.target.value)} required />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-neutral-500 mb-1">Handle (Username)</label>
+            <input className="input w-full" value={handle} onChange={(e) => setHandle(e.target.value)} />
           </div>
           <div>
             <label className="block text-xs font-medium text-neutral-500 mb-1">Bio</label>
-            <textarea
-              className="input w-full"
-              rows="2"
-              value={bio}
-              onChange={(e) => setBio(e.target.value)}
-              maxLength="280"
-            />
+            <textarea className="input w-full" rows="2" value={bio} onChange={(e) => setBio(e.target.value)} maxLength="280" />
           </div>
-          <button type="submit" disabled={loading} className="btn btn-primary w-full">
-            {loading ? 'Saving…' : 'Update Profile'}
-          </button>
+          <button type="submit" disabled={loading} className="btn btn-primary w-full">{loading ? 'Saving…' : 'Update Profile'}</button>
         </form>
 
         <hr className="my-4 border-neutral-200 dark:border-neutral-800" />
-
+        
+        {/* Password Change Logic ... (Keep your existing form below) */}
         <form onSubmit={handleChangePassword} className="space-y-3">
           <h3 className="text-sm font-medium">Change Password</h3>
           <div>
             <label className="block text-xs font-medium text-neutral-500 mb-1">Current Password</label>
-            <input
-              type="password"
-              className="input w-full"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              required
-            />
+            <input type="password" className="input w-full" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required />
           </div>
           <div>
             <label className="block text-xs font-medium text-neutral-500 mb-1">New Password</label>
-            <input
-              type="password"
-              className="input w-full"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              required
-            />
+            <input type="password" className="input w-full" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required />
           </div>
           <div>
             <label className="block text-xs font-medium text-neutral-500 mb-1">Confirm New Password</label>
-            <input
-              type="password"
-              className="input w-full"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              required
-            />
+            <input type="password" className="input w-full" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required />
           </div>
-          <button type="submit" disabled={loading} className="btn w-full">
-            {loading ? 'Changing…' : 'Change Password'}
-          </button>
+          <button type="submit" disabled={loading} className="btn w-full">{loading ? 'Changing…' : 'Change Password'}</button>
         </form>
       </div>
     </div>

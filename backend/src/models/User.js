@@ -13,6 +13,12 @@ const userSchema = new mongoose.Schema(
     handle: { type: String, unique: true, sparse: true, trim: true, lowercase: true },
     bio: { type: String, default: '', maxlength: 280 },
     profilePicture: { type: String, default: '' },
+    // --- ADDED: Google Drive Connectivity ---
+    googleTokens: {
+      access_token: String,
+      refresh_token: String,
+      expiry_date: Number,
+    },
   },
   { timestamps: true }
 );
@@ -29,7 +35,12 @@ userSchema.methods.comparePassword = function (candidate) {
 
 userSchema.methods.toSafeObject = function () {
   const { _id, name, email, role, status, plan, loyaltyPoints, createdAt } = this;
-  return { id: _id, name, email, role, status, plan, loyaltyPoints, createdAt };
+  // --- UPDATED: Return safe fields + Drive status ---
+  return { 
+    id: _id, name, email, role, status, plan, loyaltyPoints, createdAt,
+    handle: this.handle, bio: this.bio, profilePicture: this.profilePicture,
+    googleConnected: !!(this.googleTokens && this.googleTokens.access_token)
+  };
 };
 
 export default mongoose.model('User', userSchema);

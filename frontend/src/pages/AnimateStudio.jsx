@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import client from '../api/client.js';
+import { useAuth } from '../context/AuthContext.jsx';
 import ColorWheel from '../components/canvas/ColorWheel.jsx';
 import { useUndoManager } from '../components/canvas/useUndoManager.js';
 import {
@@ -8,6 +9,11 @@ import {
 } from '../components/icons/Icons.jsx';
 
 const ANIM_W = 640, ANIM_H = 420;
+
+
+
+const FREE_FRAME_LIMIT = 20;
+const FREE_FPS_LIMIT = 12;   // Added for Animation
 const TOOLS = [
   { id: 'brush', Icon: BrushIcon },
   { id: 'pencil', Icon: PencilIcon },
@@ -21,6 +27,8 @@ function getCanvasPos(e, canvasEl) {
 }
 
 export default function AnimateStudio() {
+  const { user } = useAuth();
+  const isPremium = user?.plan === 'premium';
   const [tool, setTool] = useState('brush');
   const [color, setColor] = useState('#14B8A6');
   const [size, setSize] = useState(14);
@@ -33,6 +41,7 @@ export default function AnimateStudio() {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState('');
   const [timelineTick, setTimelineTick] = useState(0);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   const toolRef = useRef(tool), colorRef = useRef(color), sizeRef = useRef(size);
   useEffect(() => { toolRef.current = tool; }, [tool]);
@@ -108,8 +117,44 @@ export default function AnimateStudio() {
     thumb.getContext('2d').drawImage(framesRef.current[idx].canvas, 0, 0, 64, 42);
   }
 
-  function addBlank() { saveCurrentFrame(); framesRef.current.splice(currentIndexRef.current + 1, 0, { canvas: makeBlankCanvas() }); currentIndexRef.current++; setFrameCount(framesRef.current.length); setTimelineTick((t) => t + 1); loadFrame(currentIndexRef.current); }
-  function duplicate() { saveCurrentFrame(); const c = makeBlankCanvas(); c.getContext('2d').drawImage(framesRef.current[currentIndexRef.current].canvas, 0, 0); framesRef.current.splice(currentIndexRef.current + 1, 0, { canvas: c }); currentIndexRef.current++; setFrameCount(framesRef.current.length); setTimelineTick((t) => t + 1); loadFrame(currentIndexRef.current); }
+  function handleFpsChange(e) {
+    const newFps = +e.target.value;
+    // If they are a free user and try to go over 12
+    if (!isPremium && newFps > FREE_FPS_LIMIT) {
+      setFps(FREE_FPS_LIMIT); // Snap back to 12
+      setShowUpgradeModal(true); // Open the popup
+    } else {
+      setFps(newFps); // Allow premium users or valid free values
+    }
+  }
+
+ function addBlank() { 
+  if (!isPremium && framesRef.current.length >= FREE_FRAME_LIMIT) {
+    setNotice(`Free plan is limited to ${FREE_FRAME_LIMIT} frames. Upgrade to Premium for more.`);
+    return;
+  }
+  saveCurrentFrame(); 
+  framesRef.current.splice(currentIndexRef.current + 1, 0, { canvas: makeBlankCanvas() }); 
+  currentIndexRef.current++; 
+  setFrameCount(framesRef.current.length); 
+  setTimelineTick((t) => t + 1); 
+  loadFrame(currentIndexRef.current); 
+}
+
+function duplicate() { 
+  if (!isPremium && framesRef.current.length >= FREE_FRAME_LIMIT) {
+    setNotice(`Free plan is limited to ${FREE_FRAME_LIMIT} frames. Upgrade to Premium for more.`);
+    return;
+  }
+  saveCurrentFrame(); 
+  const c = makeBlankCanvas(); 
+  c.getContext('2d').drawImage(framesRef.current[currentIndexRef.current].canvas, 0, 0); 
+  framesRef.current.splice(currentIndexRef.current + 1, 0, { canvas: c }); 
+  currentIndexRef.current++; 
+  setFrameCount(framesRef.current.length); 
+  setTimelineTick((t) => t + 1); 
+  loadFrame(currentIndexRef.current); 
+}
   function del() { if (framesRef.current.length <= 1) return; framesRef.current.splice(currentIndexRef.current, 1); if (currentIndexRef.current >= framesRef.current.length) currentIndexRef.current = framesRef.current.length - 1; setFrameCount(framesRef.current.length); setTimelineTick((t) => t + 1); loadFrame(currentIndexRef.current); }
   function move(dir) { const newIdx = currentIndexRef.current + dir; if (newIdx < 0 || newIdx >= framesRef.current.length) return; saveCurrentFrame(); const tmp = framesRef.current[currentIndexRef.current]; framesRef.current[currentIndexRef.current] = framesRef.current[newIdx]; framesRef.current[newIdx] = tmp; currentIndexRef.current = newIdx; setTimelineTick((t) => t + 1); loadFrame(newIdx); }
 
@@ -232,7 +277,7 @@ export default function AnimateStudio() {
         <button className="btn btn-icon" onClick={() => { stopPlay(); currentIndexRef.current = 0; loadFrame(0); }}><StopIcon className="w-4 h-4" /></button>
         <div className="flex items-center gap-2 text-xs">
           <span className="font-mono uppercase text-neutral-400">FPS</span>
-          <input type="range" min={1} max={24} value={fps} onChange={(e) => setFps(+e.target.value)} />
+          <input type="range" min={1} max={24} value={fps} onChange={handleFpsChange} />
           <span>{fps}</span>
         </div>
         <label className="flex items-center gap-1 text-xs cursor-pointer">
@@ -255,10 +300,57 @@ export default function AnimateStudio() {
               className={`flex-none w-16 rounded-md border-2 cursor-pointer relative ${i === currentIndex ? '!border-teal-500' : 'border-neutral-200 dark:border-neutral-700'}`}>
               <canvas width={64} height={42} className="block checker" ref={(node) => { if (node) node.getContext('2d').drawImage(f.canvas, 0, 0, 64, 42); }} />
               <span className="absolute bottom-0 right-1 text-[9px] bg-black/60 text-white px-1 rounded">{i + 1}</span>
+
             </div>
           ))}
         </div>
       </div>
+      {/* Premium Upgrade Modal */}
+      {showUpgradeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <div className="w-full max-w-4xl bg-[#070C0B] border border-neutral-700 rounded-2xl p-8 relative m-4">
+            <button onClick={() => setShowUpgradeModal(false)} className="absolute top-4 right-4 text-neutral-400 hover:text-white text-2xl">✕</button>
+            
+            <h2 className="text-3xl font-display font-semibold mb-2">Upgrade to Premium</h2>
+            <p className="text-teal-400 mb-8">Unlock advanced animation features and perks</p>
+            
+            {/* Pricing Cards Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              
+              {/* Free Card */}
+              <div className="border border-neutral-700 rounded-xl p-6 flex flex-col items-center justify-center text-center">
+                <h3 className="text-xl font-semibold mb-2">Free Artist</h3>
+                <div className="text-3xl font-bold mb-2"><span className="text-teal-400">$0</span> <span className="text-sm font-normal">/ month</span></div>
+                <p className="text-sm text-neutral-400 mb-4">Basic tools & 15 layers included</p>
+                <button className="btn w-full bg-neutral-800 text-neutral-400 cursor-not-allowed" disabled>Current Plan</button>
+              </div>
+
+              {/* Monthly Plan (Highlighted) */}
+              <div className="border-2 border-teal-500 rounded-xl p-6 flex flex-col items-center justify-center text-center relative">
+                <span className="absolute -top-3 bg-teal-500 text-black text-xs px-2 py-1 rounded">MOST POPULAR</span>
+                <h3 className="text-xl font-semibold mb-2">Monthly Plan</h3>
+                <div className="text-3xl font-bold mb-2"><span className="text-teal-400">$7</span> <span className="text-sm font-normal">/ month</span></div>
+                <p className="text-sm text-neutral-400 mb-4">Extended limits & cloud backup</p>
+                <button className="btn w-full bg-teal-600 text-white border-teal-600">Selected</button>
+              </div>
+
+              {/* Yearly Plan */}
+              <div className="border border-neutral-700 rounded-xl p-6 flex flex-col items-center justify-center text-center relative">
+                <span className="absolute -top-3 bg-teal-500 text-black text-xs px-2 py-1 rounded">Save $19</span>
+                <h3 className="text-xl font-semibold mb-2">Yearly Plan</h3>
+                <div className="text-3xl font-bold mb-2"><span className="text-teal-400">$65</span> <span className="text-sm font-normal">/ year</span></div>
+                <p className="text-sm text-neutral-400 mb-4">Best value for serious creators</p>
+                <button className="btn w-full border-teal-500 text-teal-400 hover:bg-teal-500 hover:text-black">Select Yearly</button>
+              </div>
+            </div>
+
+            {/* Bottom PayPal Button */}
+            <div className="mt-8 flex justify-center">
+              <button className="btn btn-primary text-lg py-3 px-10">Pay Through PayPal ($7)</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

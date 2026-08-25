@@ -1,7 +1,16 @@
 import mongoose from 'mongoose';
 
 const layerSchema = new mongoose.Schema(
-  { name: String, dataUrl: String, visible: { type: Boolean, default: true }, opacity: { type: Number, default: 1 } },
+  {
+    name: String,
+    dataUrl: String,
+    visible: { type: Boolean, default: true },
+    opacity: { type: Number, default: 1 },
+    // --- Faria's New Layer Features ---
+    blendMode: { type: String, default: 'source-over' },
+    clipped: { type: Boolean, default: false },
+    maskDataUrl: { type: String, default: null }
+  },
   { _id: false }
 );
 const frameSchema = new mongoose.Schema({ dataUrl: String }, { _id: false });

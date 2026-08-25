@@ -1,24 +1,48 @@
 import { useEffect, useRef, useState } from 'react';
 import client from '../api/client.js';
+import { useAuth } from '../context/AuthContext.jsx'; // <--- ADDED IMPORT
 import ColorWheel from '../components/canvas/ColorWheel.jsx';
 import { useUndoManager } from '../components/canvas/useUndoManager.js';
 import {
   BrushIcon, PencilIcon, AirbrushIcon, EraserIcon, RectIcon, EllipseIcon, LineIcon, SelectIcon,
   UndoIcon, RedoIcon, EyeIcon, EyeOffIcon, DuplicateIcon, ArrowUpIcon, ArrowDownIcon, CloseIcon, PlusIcon,
+  HandIcon
 } from '../components/icons/Icons.jsx';
 
 const DRAW_W = 900, DRAW_H = 600;
+const BLEND_MODES = [
+  { id: 'source-over', label: 'Normal' },
+  { id: 'multiply', label: 'Multiply' },
+  { id: 'screen', label: 'Screen' },
+  { id: 'overlay', label: 'Overlay' },
+  { id: 'darken', label: 'Darken' },
+  { id: 'lighten', label: 'Lighten' },
+  { id: 'color-dodge', label: 'Color Dodge' },
+  { id: 'color-burn', label: 'Color Burn' },
+  { id: 'hard-light', label: 'Hard Light' },
+  { id: 'soft-light', label: 'Soft Light' }
+];
+
 const TOOLS = [
   { id: 'brush', Icon: BrushIcon },
   { id: 'pencil', Icon: PencilIcon },
   { id: 'airbrush', Icon: AirbrushIcon },
   { id: 'eraser', Icon: EraserIcon },
+  { id: 'pan', Icon: HandIcon }, 
 ];
 const SHAPE_TOOLS = [
   { id: 'rect', Icon: RectIcon },
   { id: 'ellipse', Icon: EllipseIcon },
   { id: 'line', Icon: LineIcon },
 ];
+
+const HANDLE_HIT_RADIUS = 10;
+const ROTATE_STALK = 28;
+const MAX_SKEW_RAD = 1.3;
+const MIN_SCALE = 0.05;
+const CORNER_SIGN = {
+  'scale-tl': [-1, -1], 'scale-tr': [1, -1], 'scale-bl': [-1, 1], 'scale-br': [1, 1],
+};
 
 function normRect(a, b) { return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) }; }
 function getCanvasPos(e, canvasEl) {
@@ -31,6 +55,10 @@ export default function DrawStudio({ projectId }) {
   const [rotation, setRotation] = useState(0);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [tool, setTool] = useState('brush');
+export default function DrawStudio() {
+  const [tool, setToolState] = useState('brush');
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [rotation, setRotation] = useState(0);
   const [color, setColor] = useState('#14B8A6');
   const [size, setSize] = useState(14);
   const [shapeFill, setShapeFill] = useState(true);
@@ -39,6 +67,7 @@ export default function DrawStudio({ projectId }) {
   const [activeLayerId, setActiveLayerId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState('');
+  const [hasSelection, setHasSelection] = useState(false);
 
   const toolRef = useRef(tool), colorRef = useRef(color), sizeRef = useRef(size), shapeFillRef = useRef(shapeFill);
   useEffect(() => { toolRef.current = tool; }, [tool]);
@@ -76,10 +105,25 @@ export default function DrawStudio({ projectId }) {
   const handleMouseUp = () => {
     isDragging.current = false;
   };
+  const lastPanPosRef = useRef(null);
+
+  const transformSelRef = useRef(null);
+  const dragModeRef = useRef(null);
+  const dragStartRef = useRef(null);
 
   const drawUM = useUndoManager();
+  
+  // --- ADDED: 15 LAYER LIMIT LOGIC ---
+  const { user } = useAuth();
+  const isPremium = user?.plan === 'premium';
+  const FREE_LAYER_LIMIT = 15;
 
   function activeLayer() { return layersRef.current.find((l) => l.id === activeLayerId); }
+
+  function setTool(id) {
+    if (tool === 'select' && id !== 'select' && transformSelRef.current) commitTransform();
+    setToolState(id);
+  }
 
   function renderLayerStack() {
     const mount = layersMountRef.current;
@@ -91,24 +135,45 @@ export default function DrawStudio({ projectId }) {
       mount.appendChild(l.canvas);
     });
   }
+  
+  // --- UPDATED: addLayer with Limit Check ---
   function addLayer(name) {
+    if (!isPremium && layersRef.current.length >= FREE_LAYER_LIMIT) {
+      setNotice(`Free plan is limited to ${FREE_LAYER_LIMIT} layers. Upgrade to Premium for unlimited layers.`);
+      return;
+    }
     const c = document.createElement('canvas'); c.width = DRAW_W; c.height = DRAW_H;
-    const layer = { id: 'L' + layerCounterRef.current++, name: name || `Layer ${layersRef.current.length + 1}`, canvas: c, ctx: c.getContext('2d'), visible: true, opacity: 1 };
+    const layer = { 
+      id: 'L' + layerCounterRef.current++, name: name || `Layer ${layersRef.current.length + 1}`, 
+      canvas: c, ctx: c.getContext('2d'), visible: true, opacity: 1,
+      blendMode: 'source-over', clipped: false, maskDataUrl: null // Initialize Faria's features
+    };
     layersRef.current.push(layer);
     setActiveLayerId(layer.id);
     renderLayerStack(); setLayersVersion((v) => v + 1);
     return layer;
   }
+
+  // --- UPDATED: duplicateLayer with Limit Check ---
   function duplicateLayer() {
     const src = activeLayer(); if (!src) return;
+    if (!isPremium && layersRef.current.length >= FREE_LAYER_LIMIT) {
+      setNotice(`Free plan is limited to ${FREE_LAYER_LIMIT} layers. Upgrade to Premium for unlimited layers.`);
+      return;
+    }
     const idx = layersRef.current.indexOf(src);
     const c = document.createElement('canvas'); c.width = DRAW_W; c.height = DRAW_H;
     c.getContext('2d').drawImage(src.canvas, 0, 0);
-    const layer = { id: 'L' + layerCounterRef.current++, name: src.name + ' copy', canvas: c, ctx: c.getContext('2d'), visible: true, opacity: src.opacity };
+    const layer = { 
+      id: 'L' + layerCounterRef.current++, name: src.name + ' copy', canvas: c, ctx: c.getContext('2d'), 
+      visible: true, opacity: src.opacity, 
+      blendMode: src.blendMode, clipped: src.clipped, maskDataUrl: src.maskDataUrl // Copy Faria's features
+    };
     layersRef.current.splice(idx + 1, 0, layer);
     setActiveLayerId(layer.id);
     renderLayerStack(); setLayersVersion((v) => v + 1);
   }
+
   function deleteLayer(layerId) {
     if (layersRef.current.length <= 1) return;
     const idx = layersRef.current.findIndex((l) => l.id === layerId);
@@ -129,6 +194,33 @@ export default function DrawStudio({ projectId }) {
   }
   function setOpacity(layerId, val) { const l = layersRef.current.find((x) => x.id === layerId); l.opacity = val; renderLayerStack(); }
   function renameLayer(layerId, name) { const l = layersRef.current.find((x) => x.id === layerId); l.name = name; }
+
+  // --- Faria's Layer Functions ---
+  function updateLayerBlendMode(layerId, mode) {
+    const l = layersRef.current.find((x) => x.id === layerId);
+    if (l) { l.blendMode = mode; renderLayerStack(); }
+  }
+  function toggleLayerClipping(layerId) {
+    const l = layersRef.current.find((x) => x.id === layerId);
+    if (l) { l.clipped = !l.clipped; renderLayerStack(); }
+  }
+  function addLayerMask(layerId) {
+    const l = layersRef.current.find((x) => x.id === layerId);
+    if (l) {
+      // Create a blank mask (all white, so it reveals everything initially)
+      const maskCanvas = document.createElement('canvas');
+      maskCanvas.width = DRAW_W; maskCanvas.height = DRAW_H;
+      const maskCtx = maskCanvas.getContext('2d');
+      maskCtx.fillStyle = 'white';
+      maskCtx.fillRect(0, 0, DRAW_W, DRAW_H);
+      l.maskDataUrl = maskCanvas.toDataURL();
+      setLayersVersion(v => v + 1);
+    }
+  }
+  function removeLayerMask(layerId) {
+    const l = layersRef.current.find((x) => x.id === layerId);
+    if (l) { l.maskDataUrl = null; setLayersVersion(v => v + 1); }
+  }
 
   function drawDab(ctx, a, b, t) {
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
@@ -168,46 +260,260 @@ export default function DrawStudio({ projectId }) {
     else if (t === 'line') { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
   }
 
+  // ============================= TRANSFORM TOOL =============================
+  function getCenter(sel) { return { x: sel.rect.x + sel.rect.w / 2 + sel.t.tx, y: sel.rect.y + sel.rect.h / 2 + sel.t.ty }; }
+
+  function getBaseMatrix(sel) {
+    const c = getCenter(sel);
+    let m = new DOMMatrix();
+    m = m.translate(c.x, c.y);
+    m = m.rotate((sel.t.rotation * 180) / Math.PI);
+    return m;
+  }
+  function getFullMatrix(sel) {
+    const { skewX, skewY, scaleX, scaleY } = sel.t;
+    let m = getBaseMatrix(sel);
+    m = m.multiply(new DOMMatrix([1, Math.tan(skewY), Math.tan(skewX), 1, 0, 0]));
+    m = m.scale(scaleX, scaleY);
+    return m;
+  }
+  function computeHandlePoints(sel) {
+    const m = getFullMatrix(sel);
+    const hw = sel.rect.w / 2, hh = sel.rect.h / 2;
+    const pt = (x, y) => { const p = m.transformPoint(new DOMPoint(x, y)); return { x: p.x, y: p.y }; };
+    const tl = pt(-hw, -hh), tr = pt(hw, -hh), bl = pt(-hw, hh), br = pt(hw, hh);
+    const topMid = pt(0, -hh), bottomMid = pt(0, hh), leftMid = pt(-hw, 0), rightMid = pt(hw, 0);
+    const base = getBaseMatrix(sel);
+    const o = base.transformPoint(new DOMPoint(0, 0));
+    const u = base.transformPoint(new DOMPoint(0, -1));
+    const dx = u.x - o.x, dy = u.y - o.y, len = Math.hypot(dx, dy) || 1;
+    const rotate = { x: topMid.x + (dx / len) * ROTATE_STALK, y: topMid.y + (dy / len) * ROTATE_STALK };
+    return { tl, tr, bl, br, topMid, bottomMid, leftMid, rightMid, rotate };
+  }
+  function hitTestHandles(pos, sel) {
+    const hp = computeHandlePoints(sel);
+    const checks = [
+      ['scale-tl', hp.tl], ['scale-tr', hp.tr], ['scale-bl', hp.bl], ['scale-br', hp.br],
+      ['skewx-top', hp.topMid], ['skewx-bottom', hp.bottomMid],
+      ['skewy-left', hp.leftMid], ['skewy-right', hp.rightMid],
+      ['rotate', hp.rotate],
+    ];
+    for (const [name, p] of checks) { if (Math.hypot(pos.x - p.x, pos.y - p.y) <= HANDLE_HIT_RADIUS) return name; }
+    return null;
+  }
+  function isInsideSelection(pos, sel) {
+    const inv = getFullMatrix(sel).inverse();
+    const l = inv.transformPoint(new DOMPoint(pos.x, pos.y));
+    return Math.abs(l.x) <= sel.rect.w / 2 && Math.abs(l.y) <= sel.rect.h / 2;
+  }
+  function captureDragStart(hit, pos, sel) {
+    return { hit, pos, t0: { ...sel.t }, baseInverse: getBaseMatrix(sel).inverse(), center: getCenter(sel) };
+  }
+  function applyDrag(mode, pos, shiftKey) {
+    const sel = transformSelRef.current; const ds = dragStartRef.current;
+    if (!sel || !ds) return;
+    const { t0, baseInverse, center } = ds;
+    if (mode === 'move') {
+      sel.t.tx = t0.tx + (pos.x - ds.pos.x);
+      sel.t.ty = t0.ty + (pos.y - ds.pos.y);
+      return;
+    }
+    if (mode === 'rotate') {
+      const a0 = Math.atan2(ds.pos.y - center.y, ds.pos.x - center.x);
+      const a1 = Math.atan2(pos.y - center.y, pos.x - center.x);
+      sel.t.rotation = t0.rotation + (a1 - a0);
+      return;
+    }
+    const local = baseInverse.transformPoint(new DOMPoint(pos.x, pos.y));
+    const hw = sel.rect.w / 2, hh = sel.rect.h / 2;
+    if (CORNER_SIGN[mode]) {
+      const [sx, sy] = CORNER_SIGN[mode];
+      let newScaleX = local.x / (sx * hw);
+      let newScaleY = local.y / (sy * hh);
+      if (shiftKey) {
+        const u = Math.max(Math.abs(newScaleX), Math.abs(newScaleY));
+        newScaleX = Math.sign(newScaleX || 1) * u;
+        newScaleY = Math.sign(newScaleY || 1) * u;
+      }
+      const clamp = (v) => (Math.abs(v) < MIN_SCALE ? MIN_SCALE * Math.sign(v || 1) : v);
+      sel.t.scaleX = clamp(newScaleX);
+      sel.t.scaleY = clamp(newScaleY);
+      return;
+    }
+    if (mode === 'skewx-top' || mode === 'skewx-bottom') {
+      const sy = mode === 'skewx-top' ? -1 : 1;
+      const denom = sy * t0.scaleY * hh;
+      const ang = Math.max(-MAX_SKEW_RAD, Math.min(MAX_SKEW_RAD, Math.atan(local.x / denom)));
+      sel.t.skewX = ang;
+      return;
+    }
+    if (mode === 'skewy-left' || mode === 'skewy-right') {
+      const sx = mode === 'skewy-left' ? -1 : 1;
+      const denom = sx * t0.scaleX * hw;
+      const ang = Math.max(-MAX_SKEW_RAD, Math.min(MAX_SKEW_RAD, Math.atan(local.y / denom)));
+      sel.t.skewY = ang;
+      return;
+    }
+  }
+  function renderTransformOverlay() {
+    const sel = transformSelRef.current;
+    const ctx = overlayRef.current.getContext('2d');
+    ctx.clearRect(0, 0, DRAW_W, DRAW_H);
+    if (!sel) return;
+    const m = getFullMatrix(sel);
+    ctx.save();
+    ctx.setTransform(m.a, m.b, m.c, m.d, m.e, m.f);
+    ctx.drawImage(sel.source, -sel.rect.w / 2, -sel.rect.h / 2, sel.rect.w, sel.rect.h);
+    ctx.restore();
+
+    const hp = computeHandlePoints(sel);
+    ctx.save();
+    ctx.strokeStyle = '#14B8A6'; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]);
+    ctx.beginPath(); ctx.moveTo(hp.tl.x, hp.tl.y); ctx.lineTo(hp.tr.x, hp.tr.y); ctx.lineTo(hp.br.x, hp.br.y); ctx.lineTo(hp.bl.x, hp.bl.y); ctx.closePath(); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(hp.topMid.x, hp.topMid.y); ctx.lineTo(hp.rotate.x, hp.rotate.y); ctx.stroke();
+    ctx.restore();
+
+    const drawHandle = (p, shape) => {
+      ctx.save();
+      ctx.fillStyle = '#fff'; ctx.strokeStyle = '#14B8A6'; ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      if (shape === 'circle') ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+      else ctx.rect(p.x - 5, p.y - 5, 10, 10);
+      ctx.fill(); ctx.stroke();
+      ctx.restore();
+    };
+    [hp.tl, hp.tr, hp.bl, hp.br, hp.topMid, hp.bottomMid, hp.leftMid, hp.rightMid].forEach((p) => drawHandle(p, 'square'));
+    drawHandle(hp.rotate, 'circle');
+  }
+  function liftSelection(r) {
+    const layer = activeLayer(); if (!layer) return;
+    const rx = Math.max(0, Math.round(r.x)), ry = Math.max(0, Math.round(r.y));
+    const rw = Math.min(DRAW_W - rx, Math.round(r.w)), rh = Math.min(DRAW_H - ry, Math.round(r.h));
+    if (rw < 2 || rh < 2) return;
+    drawUM.push(layer.canvas);
+    const snap = document.createElement('canvas'); snap.width = rw; snap.height = rh;
+    snap.getContext('2d').drawImage(layer.canvas, rx, ry, rw, rh, 0, 0, rw, rh);
+    layer.ctx.clearRect(rx, ry, rw, rh);
+    transformSelRef.current = {
+      rect: { x: rx, y: ry, w: rw, h: rh },
+      source: snap,
+      layer,
+      t: { tx: 0, ty: 0, rotation: 0, skewX: 0, skewY: 0, scaleX: 1, scaleY: 1 },
+    };
+    setHasSelection(true);
+    renderTransformOverlay();
+  }
+  function commitTransform() {
+    const sel = transformSelRef.current; if (!sel) return;
+    const m = getFullMatrix(sel);
+    drawUM.push(sel.layer.canvas);
+    const ctx = sel.layer.ctx;
+    ctx.save();
+    ctx.setTransform(m.a, m.b, m.c, m.d, m.e, m.f);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(sel.source, -sel.rect.w / 2, -sel.rect.h / 2, sel.rect.w, sel.rect.h);
+    ctx.restore();
+    transformSelRef.current = null;
+    setHasSelection(false);
+    clearOverlay();
+  }
+  function cancelTransform() {
+    if (!transformSelRef.current) return;
+    drawUM.undo();
+    transformSelRef.current = null;
+    setHasSelection(false);
+    clearOverlay();
+  }
+  // ============================ /TRANSFORM TOOL ==============================
+
   useEffect(() => {
     const overlay = overlayRef.current;
     function onDown(e) {
       const pos = getCanvasPos(e, overlay);
       isPointerDownRef.current = true; startPosRef.current = pos; lastPosRef.current = pos;
-      const t = toolRef.current, layer = activeLayer(); if (!layer) return;
+      const t = toolRef.current;
+
+      if (t === 'pan') {
+        lastPanPosRef.current = { x: e.clientX, y: e.clientY };
+        return;
+      }
+
+      if (t === 'select') {
+        const sel = transformSelRef.current;
+        if (sel) {
+          const hit = hitTestHandles(pos, sel);
+          if (hit) { dragModeRef.current = hit; dragStartRef.current = captureDragStart(hit, pos, sel); return; }
+          if (isInsideSelection(pos, sel)) { dragModeRef.current = 'move'; dragStartRef.current = { pos, t0: { ...sel.t } }; return; }
+          commitTransform();
+        }
+        dragModeRef.current = 'marquee';
+        return;
+      }
+
+      const layer = activeLayer(); if (!layer) return;
       if (['brush', 'pencil', 'airbrush', 'eraser'].includes(t)) { drawUM.push(layer.canvas); drawDab(layer.ctx, pos, pos, t); }
       else if (['rect', 'ellipse', 'line'].includes(t)) { clearOverlay(); }
-      else if (t === 'select') { drawUM.push(layer.canvas); clearOverlay(); }
     }
     function onMove(e) {
       if (!isPointerDownRef.current) return;
       const pos = getCanvasPos(e, overlay);
-      const t = toolRef.current, layer = activeLayer();
+      const t = toolRef.current;
+
+      if (t === 'pan') {
+        const dx = e.clientX - lastPanPosRef.current.x;
+        const dy = e.clientY - lastPanPosRef.current.y;
+        setPan((prev) => ({ x: prev.x + dx, y: prev.y + dy }));
+        lastPanPosRef.current = { x: e.clientX, y: e.clientY };
+        return;
+      }
+
+      if (t === 'select') {
+        if (dragModeRef.current === 'marquee') { clearOverlay(); drawMarqueePreview(overlay.getContext('2d'), startPosRef.current, pos); return; }
+        if (dragModeRef.current) { applyDrag(dragModeRef.current, pos, e.shiftKey); renderTransformOverlay(); }
+        return;
+      }
+
+      const layer = activeLayer();
       if (['brush', 'pencil', 'airbrush', 'eraser'].includes(t)) { if (layer) { drawDab(layer.ctx, lastPosRef.current, pos, t); lastPosRef.current = pos; } }
       else if (['rect', 'ellipse', 'line'].includes(t)) { clearOverlay(); drawShapePreview(overlay.getContext('2d'), startPosRef.current, pos, t); }
-      else if (t === 'select') { clearOverlay(); drawMarqueePreview(overlay.getContext('2d'), startPosRef.current, pos); }
     }
     function onUp(e) {
       if (!isPointerDownRef.current) return;
       isPointerDownRef.current = false;
       const pos = getCanvasPos(e, overlay);
-      const t = toolRef.current, layer = activeLayer();
-      if (['rect', 'ellipse', 'line'].includes(t) && layer) { clearOverlay(); commitShape(layer.ctx, startPosRef.current, pos, t); }
-      else if (t === 'select' && layer) {
-        clearOverlay();
-        const r = normRect(startPosRef.current, pos);
-        if (r.w > 2 && r.h > 2) layer.ctx.clearRect(r.x, r.y, r.w, r.h);
+      const t = toolRef.current;
+
+      if (t === 'pan') { return; }
+
+      if (t === 'select') {
+        if (dragModeRef.current === 'marquee') {
+          clearOverlay();
+          const r = normRect(startPosRef.current, pos);
+          if (r.w > 4 && r.h > 4) liftSelection(r);
+        }
+        dragModeRef.current = null;
+        return;
       }
+
+      const layer = activeLayer();
+      if (['rect', 'ellipse', 'line'].includes(t) && layer) { clearOverlay(); commitShape(layer.ctx, startPosRef.current, pos, t); }
     }
     overlay.addEventListener('pointerdown', onDown);
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     return () => { overlay.removeEventListener('pointerdown', onDown); window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeLayerId]);
 
   useEffect(() => {
     function onKey(e) {
       const tag = document.activeElement?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (transformSelRef.current) {
+        if (e.key === 'Enter') { e.preventDefault(); commitTransform(); return; }
+        if (e.key === 'Escape') { e.preventDefault(); cancelTransform(); return; }
+      }
       if (e.ctrlKey || e.metaKey) {
         if (e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); drawUM.undo(); return; }
         if ((e.key.toLowerCase() === 'z' && e.shiftKey) || e.key.toLowerCase() === 'y') { e.preventDefault(); drawUM.redo(); return; }
@@ -219,17 +525,74 @@ export default function DrawStudio({ projectId }) {
     }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [drawUM]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drawUM, tool]);
 
-  useEffect(() => { if (stageInnerRef.current) stageInnerRef.current.style.transform = `scale(${zoom})`; }, [zoom]);
+  useEffect(() => { 
+    if (stageInnerRef.current) 
+      stageInnerRef.current.style.transform = `translate(${pan.x}px, ${pan.y}px) rotate(${rotation}deg) scale(${zoom})`; 
+  }, [zoom, pan, rotation]);
 
   function compositeToCanvas() {
     const off = document.createElement('canvas'); off.width = DRAW_W; off.height = DRAW_H;
     const ctx = off.getContext('2d');
-    layersRef.current.forEach((l) => { if (!l.visible) return; ctx.globalAlpha = l.opacity; ctx.drawImage(l.canvas, 0, 0); });
+    
+    // Iterate through layers, respecting blend modes and clipping
+    layersRef.current.forEach((l, index) => {
+      if (!l.visible) return;
+      
+      let drawLayer = true;
+      ctx.save();
+      ctx.globalCompositeOperation = l.blendMode || 'source-over';
+      ctx.globalAlpha = l.opacity;
+
+      // Apply Clipping logic
+      if (l.clipped && index > 0) {
+        const baseLayer = layersRef.current[index - 1];
+        if (baseLayer && baseLayer.visible) {
+          // Create a temp canvas for the clipped layer
+          const tempCanvas = document.createElement('canvas');
+          tempCanvas.width = DRAW_W; tempCanvas.height = DRAW_H;
+          const tempCtx = tempCanvas.getContext('2d');
+          tempCtx.drawImage(l.canvas, 0, 0);
+          
+          // Apply the mask of the layer below
+          tempCtx.globalCompositeOperation = 'destination-in';
+          tempCtx.drawImage(baseLayer.canvas, 0, 0);
+          
+          ctx.drawImage(tempCanvas, 0, 0);
+          drawLayer = false;
+        }
+      }
+
+      // Apply Masking logic
+      if (drawLayer && l.maskDataUrl) {
+        const maskImg = new Image();
+        maskImg.src = l.maskDataUrl;
+        // NOTE: This is a simplified mask. For true rendering on the fly, we should
+        // pre-cache the mask image. But for the purpose of this assignment, 
+        // we will draw it with a composite operation.
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = DRAW_W; tempCanvas.height = DRAW_H;
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCtx.drawImage(l.canvas, 0, 0);
+        tempCtx.globalCompositeOperation = 'destination-in';
+        tempCtx.drawImage(maskImg, 0, 0);
+        
+        ctx.drawImage(tempCanvas, 0, 0);
+        drawLayer = false;
+      }
+
+      if (drawLayer) {
+        ctx.drawImage(l.canvas, 0, 0);
+      }
+      ctx.restore();
+    });
     ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
     return off;
   }
+  
   function exportPNG() {
     compositeToCanvas().toBlob((blob) => {
       const url = URL.createObjectURL(blob);
@@ -238,6 +601,7 @@ export default function DrawStudio({ projectId }) {
     });
   }
   async function save() {
+    if (transformSelRef.current) commitTransform();
     setSaving(true); setNotice('');
     try {
       const thumbCanvas = document.createElement('canvas'); thumbCanvas.width = 240; thumbCanvas.height = 160;
@@ -245,7 +609,10 @@ export default function DrawStudio({ projectId }) {
       const payload = {
         title: 'Illustration', type: 'illustration', width: DRAW_W, height: DRAW_H,
         thumbnail: thumbCanvas.toDataURL(),
-        layers: layersRef.current.map((l) => ({ name: l.name, dataUrl: l.canvas.toDataURL(), visible: l.visible, opacity: l.opacity })),
+        layers: layersRef.current.map((l) => ({ 
+          name: l.name, dataUrl: l.canvas.toDataURL(), visible: l.visible, opacity: l.opacity,
+          blendMode: l.blendMode, clipped: l.clipped, maskDataUrl: l.maskDataUrl
+        })),
       };
       await client.post('/projects', payload);
       setNotice('Saved.');
@@ -253,56 +620,8 @@ export default function DrawStudio({ projectId }) {
     finally { setSaving(false); }
   }
 
-  useEffect(() => {
-    if (projectId && projectId !== 'new') {
-      const loadProject = async () => {
-        try {
-          const res = await client.get(`/projects/${projectId}`);
-          const project = res.data.project;
+  useEffect(() => { addLayer('Layer 1'); /* eslint-disable-next-line */ }, []);
 
-          layersRef.current = [];
-
-          project.layers.forEach((layerData) => {
-            const canvas = document.createElement('canvas');
-            canvas.width = project.width || DRAW_W;
-            canvas.height = project.height || DRAW_H;
-            const ctx = canvas.getContext('2d');
-
-            const img = new Image();
-            img.onload = () => {
-              ctx.drawImage(img, 0, 0);
-            };
-            img.src = layerData.dataUrl; 
-
-            const layer = {
-              id: 'L' + layerCounterRef.current++,
-              name: layerData.name || 'Layer',
-              canvas,
-              ctx,
-              visible: layerData.visible !== undefined ? layerData.visible : true,
-              opacity: layerData.opacity || 1,
-            };
-            layersRef.current.push(layer);
-          });
-
-          if (layersRef.current.length > 0) {
-            setActiveLayerId(layersRef.current[layersRef.current.length - 1].id);
-          }
-
-          renderLayerStack();
-          setLayersVersion(v => v + 1);
-        } catch (err) {
-          console.error('Failed to load project', err);
-          setNotice('Could not load project');
-        }
-      };
-      loadProject();
-    } else {
-      if (layersRef.current.length === 0) {
-        addLayer('Layer 1');
-      }
-    }
-  }, [projectId]); 
   const layersForUI = [...layersRef.current].reverse();
   const iconBtn = 'w-4 h-4';
 
@@ -352,6 +671,26 @@ export default function DrawStudio({ projectId }) {
 >
   ↻ +90°
 </button>
+
+        <div className="flex items-center gap-2 border-l border-neutral-200 dark:border-neutral-800 pl-3 ml-1">
+          <span className="text-xs font-mono uppercase text-neutral-400">Rotate</span>
+          <button className="btn !py-1 text-xs" onClick={() => setRotation(0)}>0°</button>
+          <button className="btn !py-1 text-xs" onClick={() => setRotation(90)}>90°</button>
+          <button className="btn !py-1 text-xs" onClick={() => setRotation(180)}>180°</button>
+          <button className="btn !py-1 text-xs" onClick={() => setRotation(270)}>270°</button>
+          <span className="font-mono text-xs text-neutral-500 w-12 text-center">{rotation}°</span>
+        </div>
+
+        {hasSelection && (
+          <>
+            <span className="text-[11px] text-neutral-400 hidden lg:inline">
+              Drag corners to scale (Shift = uniform) • edges to skew • top handle to rotate • Enter to commit • Esc to cancel
+            </span>
+            <button className="btn !py-1 text-xs" onClick={cancelTransform}>Cancel</button>
+            <button className="btn btn-primary !py-1 text-xs" onClick={commitTransform}>Commit transform</button>
+          </>
+        )}
+
         <div className="flex-1" />
         {notice && <span className="text-xs text-neutral-500">{notice}</span>}
         <button disabled={saving} className="btn !py-1 text-xs" onClick={save}>{saving ? 'Saving…' : 'Save'}</button>
@@ -374,7 +713,7 @@ export default function DrawStudio({ projectId }) {
             </button>
           ))}
           <div className="w-6 border-t border-neutral-200 dark:border-neutral-800 my-1" />
-          <button title="select" onClick={() => setTool('select')}
+          <button title="select / transform (scale, rotate, skew)" onClick={() => setTool('select')}
             className={`w-10 h-10 rounded-lg flex items-center justify-center ${tool === 'select' ? 'bg-teal-600 text-white' : 'text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}>
             <SelectIcon className="w-4.5 h-4.5" />
           </button>
@@ -423,6 +762,8 @@ export default function DrawStudio({ projectId }) {
             {layersForUI.map((l) => (
               <div key={l.id} onClick={() => setActiveLayerId(l.id)}
                 className={`rounded-lg p-2 cursor-pointer border ${l.id === activeLayerId ? 'border-teal-500 bg-teal-50 dark:bg-teal-900/20' : 'border-transparent bg-neutral-50 dark:bg-neutral-800'}`}>
+                
+                {/* Layer Top Row */}
                 <div className="flex items-center gap-2 mb-1">
                   <button onClick={(e) => { e.stopPropagation(); toggleVisible(l.id); }} className="text-neutral-500">
                     {l.visible ? <EyeIcon className="w-3.5 h-3.5" /> : <EyeOffIcon className="w-3.5 h-3.5" />}
@@ -434,6 +775,47 @@ export default function DrawStudio({ projectId }) {
                   <button onClick={(e) => { e.stopPropagation(); moveLayer(l.id, -1); }} className="text-neutral-400 hover:text-neutral-700"><ArrowDownIcon className="w-3.5 h-3.5" /></button>
                   <button onClick={(e) => { e.stopPropagation(); deleteLayer(l.id); }} className="text-red-400 hover:text-red-600"><CloseIcon className="w-3.5 h-3.5" /></button>
                 </div>
+
+                {/* Faria's Module 2: Blend Mode, Clipping, Mask */}
+                <div className="flex items-center gap-2 mb-2">
+                  <select 
+                    className="flex-1 bg-neutral-100 dark:bg-neutral-800 text-[10px] rounded border border-neutral-200 dark:border-neutral-700 px-1 py-0.5"
+                    value={l.blendMode}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => updateLayerBlendMode(l.id, e.target.value)}
+                  >
+                    {BLEND_MODES.map((mode) => (
+                      <option key={mode.id} value={mode.id}>{mode.label}</option>
+                    ))}
+                  </select>
+                  
+                  <button
+                    onClick={(e) => { e.stopPropagation(); toggleLayerClipping(l.id); }}
+                    title="Toggle Clipping"
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold ${l.clipped ? 'bg-teal-500 text-white' : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-500'}`}
+                  >
+                    Clip
+                  </button>
+                  
+                  {l.maskDataUrl ? (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); removeLayerMask(l.id); }}
+                      title="Remove Mask"
+                      className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-500 text-white"
+                    >
+                      Unmask
+                    </button>
+                  ) : (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); addLayerMask(l.id); }}
+                      title="Add Mask"
+                      className="px-2 py-0.5 rounded text-[10px] font-bold bg-neutral-200 dark:bg-neutral-700 text-neutral-500 hover:bg-teal-500 hover:text-white"
+                    >
+                      Mask
+                    </button>
+                  )}
+                </div>
+
                 <input type="range" min={0} max={1} step={0.05} defaultValue={l.opacity}
                   onClick={(e) => e.stopPropagation()} onChange={(e) => setOpacity(l.id, parseFloat(e.target.value))} className="w-full" />
               </div>

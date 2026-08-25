@@ -6,6 +6,7 @@ const RECENT_WORKS_LIMIT = 9;
 // GET /api/dashboard/recent-works
 // Powers the "Recent Works" grid on the dashboard. Illustration-type projects only,
 // since those are what the drawing app (DrawStudio) can open and continue editing.
+// does not work rn because api connections are not ready, will be connected to google drive
 export async function getRecentWorks(req, res, next) {
   try {
     const works = await Project.find({ owner: req.user._id, type: 'illustration' })
