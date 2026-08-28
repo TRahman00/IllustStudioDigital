@@ -4,6 +4,7 @@ import morgan from 'morgan';
 import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
 
+
 import { connectDB } from './src/config/db.js';
 import { handleWebhook } from './src/controllers/subscriptionController.js';
 
@@ -34,7 +35,7 @@ app.use('/api', rateLimit({ windowMs: 15 * 60 * 1000, max: 300 }));
 app.get('/api/health', (req, res) => res.json({ ok: true, service: 'illust-studio-api' }));
 app.use('/api/auth', authRoutes);
 app.use('/api/projects', projectRoutes);
-app.use('/api/pricing', pricingRoutes);
+app.use('/api/subscription', pricingRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/cad', cadRoutes);
 app.use('/api/dashboard', dashboardRoutes);

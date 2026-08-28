@@ -11,10 +11,27 @@ export default function LoginPage() {
 
   async function onSubmit(e) {
     e.preventDefault();
-    setError(''); setBusy(true);
-    try { await login(form); navigate('/dashboard'); }
-    catch (err) { setError(err.response?.data?.message || 'Something went wrong.'); }
-    finally { setBusy(false); }
+    setError(''); 
+    setBusy(true);
+
+    try { 
+      
+      const res = await login(form); 
+
+      
+      const token = res?.token || res?.data?.token || res?.accessToken;
+      if (token) {
+        localStorage.setItem('token', token);
+      }
+
+      
+      navigate('/dashboard'); 
+    } catch (err) { 
+      console.error('Login error details:', err);
+      setError(err.response?.data?.message || 'Something went wrong. Please try again.'); 
+    } finally { 
+      setBusy(false); 
+    }
   }
 
   return (
@@ -24,13 +41,34 @@ export default function LoginPage() {
           <span className="w-8 h-8 rounded-full bg-teal-600 text-white flex items-center justify-center text-xs font-display">IS</span>
           <span className="font-display font-semibold text-lg">Illust Studio</span>
         </div>
+        
         <h1 className="text-xl font-semibold mb-6 text-center">Sign in</h1>
+        
         <form onSubmit={onSubmit} className="flex flex-col gap-3">
-          <input className="input" type="email" placeholder="Email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-          <input className="input" type="password" placeholder="Password" required value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+          <input 
+            className="input" 
+            type="email" 
+            placeholder="Email" 
+            required 
+            value={form.email} 
+            onChange={(e) => setForm({ ...form, email: e.target.value })} 
+          />
+          <input 
+            className="input" 
+            type="password" 
+            placeholder="Password" 
+            required 
+            value={form.password} 
+            onChange={(e) => setForm({ ...form, password: e.target.value })} 
+          />
+          
           {error && <p className="text-sm text-red-500">{error}</p>}
-          <button disabled={busy} className="btn btn-primary">{busy ? 'Signing in…' : 'Sign in'}</button>
+          
+          <button disabled={busy} className="btn btn-primary">
+            {busy ? 'Signing in…' : 'Sign in'}
+          </button>
         </form>
+
         <p className="text-sm text-neutral-500 mt-4 text-center">
           No account yet? <Link to="/register" className="text-teal-600 font-medium">Create one</Link>
         </p>

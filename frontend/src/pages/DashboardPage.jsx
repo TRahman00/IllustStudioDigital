@@ -4,30 +4,65 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useTheme } from '../context/ThemeContext.jsx';
 import client from '../api/client.js';
 import SettingsModal from '../components/SettingsModal.jsx';
+import AiChatbot from '../components/AiChatbot.jsx';
 
 export default function DashboardPage() {
-  const { user, setUser, logout } = useAuth(); // Added setUser
+  const { user, setUser, logout } = useAuth();
   const { theme, toggle } = useTheme();
   const navigate = useNavigate();
   const [recentWorks, setRecentWorks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [driveMessage, setDriveMessage] = useState('');
+  const [aiChatOpen, setAiChatOpen] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    
+    // 1. Synchronize latest User Profile Data (Preserving Local Points/Plan)
+    const syncUserData = async () => {
+      try {
+        const res = await client.get('/auth/me');
+        const fetchedUser = res.data.user || res.data;
+        const localUser = JSON.parse(localStorage.getItem('user') || '{}');
+
+        // Merge logic: local points/plan get priority if updated locally
+        const mergedUser = {
+          ...fetchedUser,
+          plan: localUser.plan || fetchedUser.plan || 'free',
+          points: localUser.points !== undefined ? localUser.points : (fetchedUser.points ?? fetchedUser.loyaltyPoints ?? 0)
+        };
+
+        setUser(mergedUser);
+        localStorage.setItem('user', JSON.stringify(mergedUser));
+      } catch (err) {
+        console.error('Failed to sync user data:', err);
+      }
+    };
+
+    // Always fetch latest data on load
+    syncUserData();
+
+    // 2. Google Drive Sync Check
     if (params.get('drive') === 'connected') {
       setDriveMessage('✅ Successfully connected to Google Drive!');
-      window.location.search = '';
-      client.get('/auth/me').then((res) => setUser(res.data.user)).catch(() => {});
+      window.history.replaceState({}, document.title, window.location.pathname);
     } else if (params.get('drive') === 'error') {
       setDriveMessage('❌ Failed to connect to Google Drive.');
     }
 
+    // 3. Subscription Payment Sync Check
+    if (params.get('subscription') === 'success' || params.get('upgraded') === '1') {
+      syncUserData().then(() => {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      });
+    }
+
+    // 4. Fetch Recent Works
     const fetchWorks = async () => {
       try {
         const res = await client.get('/dashboard/recent-works');
-        setRecentWorks(res.data.works);
+        setRecentWorks(res.data.works || []);
       } catch (err) {
         console.error('Failed to fetch recent works', err);
       } finally {
@@ -35,11 +70,10 @@ export default function DashboardPage() {
       }
     };
     fetchWorks();
-  }, []);
+  }, [setUser]);
 
-  // --- UPDATED: Connect to Drive with Token ---
   const handleConnectDrive = () => {
-    const token = localStorage.getItem('illust_token');
+    const token = localStorage.getItem('illust_token') || localStorage.getItem('token');
     if (!token) return alert('Please log in first.');
     window.location.href = `http://localhost:5000/api/drive/auth?token=${token}`;
   };
@@ -53,6 +87,7 @@ export default function DashboardPage() {
 
   return (
     <div className="flex h-screen bg-[#FBFAF6] dark:bg-[#070C0B]">
+      {/* Sidebar */}
       <aside className="w-64 bg-white dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800 flex flex-col p-4 flex-none">
         <div className="flex items-center gap-2 font-display font-semibold text-neutral-800 dark:text-white mb-6 pb-4 border-b border-neutral-200 dark:border-neutral-700">
           <svg viewBox="0 0 30 30" fill="none" className="w-7 h-7">
@@ -74,6 +109,10 @@ export default function DashboardPage() {
             ⚙️ Settings
           </button>
 
+          <button onClick={() => setAiChatOpen(!aiChatOpen)} className="w-full text-left px-3 py-2 rounded bg-teal-950/40 border border-teal-500/30 text-teal-300 hover:bg-teal-900/40 text-sm flex items-center gap-2 transition">
+            💬 AI Assistant
+          </button>
+
           <button onClick={handleConnectDrive} className="w-full px-4 py-3 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 transition text-left">
             {user?.googleConnected ? '☁️ Drive Connected' : '☁️ Connect to Google Drive'}
           </button>
@@ -90,6 +129,7 @@ export default function DashboardPage() {
         </div>
       </aside>
 
+      {/* Main Content */}
       <main className="flex-1 overflow-y-auto p-8">
         <div className="flex items-start gap-6 mb-8">
           <div className="w-24 h-24 rounded-full bg-teal-100 dark:bg-teal-900/40 flex items-center justify-center text-4xl font-semibold text-teal-700 dark:text-teal-300 flex-none">
@@ -102,13 +142,13 @@ export default function DashboardPage() {
             </div>
             <p className="text-neutral-600 dark:text-neutral-400 mt-1">{user?.bio || 'No bio yet'}</p>
             <div className="flex items-center gap-6 mt-2 text-sm">
-              <span className="flex items-center gap-1">
+              <span className="flex items-center gap-1 font-medium text-yellow-500">
                 <svg className="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
                   <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z" />
                 </svg>
-                {user?.loyaltyPoints || 0} pts
+                {user?.points ?? user?.loyaltyPoints ?? 0} pts
               </span>
-              <span className="capitalize px-2 py-0.5 rounded-full text-xs bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300">
+              <span className="capitalize px-2 py-0.5 rounded-full text-xs bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300 font-semibold">
                 {user?.plan || 'free'}
               </span>
             </div>
@@ -139,6 +179,28 @@ export default function DashboardPage() {
           )}
         </div>
       </main>
+
+      {/* AI Chatbot Popup */}
+      {aiChatOpen && (
+        <div className="fixed bottom-6 right-6 w-96 shadow-2xl z-50">
+          <div className="bg-neutral-900 border border-neutral-700 rounded-lg overflow-hidden">
+            <div className="flex items-center justify-between p-3 bg-neutral-800 border-b border-neutral-700">
+              <span className="font-bold text-sm text-teal-400 flex items-center gap-2">
+                💬 AI Assistant
+              </span>
+              <button 
+                onClick={() => setAiChatOpen(false)}
+                className="text-neutral-400 hover:text-white text-xs"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-3">
+              <AiChatbot />
+            </div>
+          </div>
+        </div>
+      )}
 
       <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>

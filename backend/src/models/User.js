@@ -9,11 +9,11 @@ const userSchema = new mongoose.Schema(
     role: { type: String, enum: ['artist', 'admin'], default: 'artist' },
     status: { type: String, enum: ['active', 'suspended'], default: 'active' },
     plan: { type: String, enum: ['free', 'premium'], default: 'free' },
-    loyaltyPoints: { type: Number, default: 0 },
+    loyaltyPoints: { type: Number, default: 50 }, // Added default welcome points
     handle: { type: String, unique: true, sparse: true, trim: true, lowercase: true },
     bio: { type: String, default: '', maxlength: 280 },
     profilePicture: { type: String, default: '' },
-    // --- ADDED: Google Drive Connectivity ---
+    // Google Drive Connectivity
     googleTokens: {
       access_token: String,
       refresh_token: String,
@@ -35,7 +35,6 @@ userSchema.methods.comparePassword = function (candidate) {
 
 userSchema.methods.toSafeObject = function () {
   const { _id, name, email, role, status, plan, loyaltyPoints, createdAt } = this;
-  // --- UPDATED: Return safe fields + Drive status ---
   return { 
     id: _id, name, email, role, status, plan, loyaltyPoints, createdAt,
     handle: this.handle, bio: this.bio, profilePicture: this.profilePicture,
