@@ -10,7 +10,7 @@ export const earnPointsOnRenewal = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    user.loyaltyPoints += Number(pointsEarned || 1000); // ডিফল্ট ১০০০ পয়েন্ট
+    user.loyaltyPoints += Number(pointsEarned || 1000); 
     await user.save();
 
     res.status(200).json({
