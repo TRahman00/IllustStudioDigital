@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import client from '../api/client.js';
 import { UploadIcon } from '../components/icons/Icons.jsx';
-
+import './Studio.css';
 const MAX_W = 900, MAX_H = 600;
 
-export default function PhotoStudio() {
+export default function PhotoStudio({ projectId }) {
   const canvasRef = useRef(null);
   const wrapRef = useRef(null);
   const cropRectRef = useRef(null);
@@ -19,8 +19,10 @@ export default function PhotoStudio() {
   const [cropMode, setCropMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState('');
+  const [driveMessage, setDriveMessage] = useState('');
 
   function filterString() { return `brightness(${100 + brightness}%) contrast(${100 + contrast}%) saturate(${100 + saturation}%)`; }
+
   function renderPhoto() {
     const canvas = canvasRef.current;
     if (!canvas || !baseImageRef.current) return;
@@ -30,18 +32,40 @@ export default function PhotoStudio() {
     ctx.drawImage(baseImageRef.current, 0, 0, canvas.width, canvas.height);
     ctx.filter = 'none';
   }
-  useEffect(renderPhoto, [brightness, contrast, saturation]);
+
+  useEffect(() => {
+    if (hasImage && canvasRef.current && baseImageRef.current) {
+      const { w, h } = origSizeRef.current;
+      canvasRef.current.width = w;
+      canvasRef.current.height = h;
+      requestAnimationFrame(renderPhoto);
+    }
+  }, [hasImage]);
+
+  // --- Load existing photo if projectId is passed ---
+  useEffect(() => {
+    if (projectId) {
+      client.get(`/projects/${projectId}`).then(res => {
+        const project = res.data.project;
+        if (project.photoDataUrl) {
+          const img = new Image();
+          img.onload = () => setupPhoto(img);
+          img.src = project.photoDataUrl;
+        }
+      }).catch(err => console.error('Failed to load photo', err));
+    }
+  }, [projectId]);
 
   function setupPhoto(img) {
     const scale = Math.min(1, MAX_W / img.width, MAX_H / img.height);
     const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
     origSizeRef.current = { w, h };
-    canvasRef.current.width = w; canvasRef.current.height = h;
-    originalImgRef.current = img; baseImageRef.current = img;
+    originalImgRef.current = img; 
+    baseImageRef.current = img;
     setBrightness(0); setContrast(0); setSaturation(0);
     setHasImage(true);
-    requestAnimationFrame(renderPhoto);
   }
+
   function handleFiles(fileList) {
     const file = fileList && fileList[0];
     if (!file || !file.type.startsWith('image/')) return;
@@ -49,19 +73,49 @@ export default function PhotoStudio() {
     img.onload = () => setupPhoto(img);
     img.src = URL.createObjectURL(file);
   }
+
   function resetAll() {
     if (!originalImgRef.current) return;
     baseImageRef.current = originalImgRef.current;
-    canvasRef.current.width = origSizeRef.current.w; canvasRef.current.height = origSizeRef.current.h;
+    const { w, h } = origSizeRef.current;
+    canvasRef.current.width = w; canvasRef.current.height = h;
     setBrightness(0); setContrast(0); setSaturation(0);
     requestAnimationFrame(renderPhoto);
   }
+
   function downloadPNG() {
     canvasRef.current.toBlob((blob) => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a'); a.href = url; a.download = 'illust-studio-photo.png'; a.click();
       setTimeout(() => URL.revokeObjectURL(url), 2000);
     });
+  }
+
+  async function exportToDrive() {
+    setDriveMessage('');
+    try {
+      const dataUrl = canvasRef.current.toDataURL('image/png');
+      await client.post('/drive/upload', { fileName: `photo-${Date.now()}.png`, mimeType: 'image/png', dataUrl });
+      setDriveMessage('✅ Exported to Drive!');
+      setTimeout(() => setDriveMessage(''), 3000);
+    } catch (err) {
+      setDriveMessage('❌ Drive not connected or upload failed.');
+    }
+  }
+
+  async function importFromDrive() {
+    setDriveMessage('');
+    try {
+      const res = await client.get('/drive/files');
+      const files = res.data.files;
+      if (files.length === 0) return setDriveMessage('No images found.');
+      const downloadRes = await client.get(`/drive/download/${files[0].id}`);
+      const img = new Image();
+      img.onload = () => setupPhoto(img);
+      img.src = downloadRes.data.dataUrl;
+    } catch (err) {
+      setDriveMessage('❌ Drive not connected.');
+    }
   }
 
   function clampRect(r, canvas) {
@@ -71,6 +125,7 @@ export default function PhotoStudio() {
     r.y = Math.max(0, Math.min(r.y, canvas.height - r.h));
     return r;
   }
+
   function enterCrop() {
     if (!hasImage || cropMode) return;
     setCropMode(true);
@@ -114,10 +169,12 @@ export default function PhotoStudio() {
       });
     });
   }
+
   function exitCrop() {
     setCropMode(false);
     if (cropRectRef.current) { cropRectRef.current.remove(); cropRectRef.current = null; }
   }
+
   function applyCrop() {
     const el = cropRectRef.current; if (!el) return;
     const canvas = canvasRef.current;
@@ -136,8 +193,15 @@ export default function PhotoStudio() {
   async function save() {
     setSaving(true); setNotice('');
     try {
-      const payload = { title: 'Photo edit', type: 'photo', width: canvasRef.current.width, height: canvasRef.current.height, photoDataUrl: canvasRef.current.toDataURL(), thumbnail: canvasRef.current.toDataURL() };
-      await client.post('/projects', payload);
+      const payload = { 
+        title: 'Photo edit', type: 'photo', width: canvasRef.current.width, height: canvasRef.current.height, 
+        photoDataUrl: canvasRef.current.toDataURL(), thumbnail: canvasRef.current.toDataURL() 
+      };
+      if (projectId) {
+        await client.put(`/projects/${projectId}`, payload);
+      } else {
+        await client.post('/projects', payload);
+      }
       setNotice('Saved.');
     } catch (err) { setNotice(err.response?.data?.message || 'Could not save.'); }
     finally { setSaving(false); }
@@ -148,6 +212,7 @@ export default function PhotoStudio() {
       <div className="flex items-center gap-3 px-4 py-2 border-b border-neutral-200 dark:border-neutral-800 flex-wrap">
         <div className="flex-1" />
         {notice && <span className="text-xs text-neutral-500">{notice}</span>}
+        {driveMessage && <span className="text-xs text-teal-500">{driveMessage}</span>}
         {hasImage && <button disabled={saving} className="btn btn-primary !py-1 text-xs" onClick={save}>{saving ? 'Saving…' : 'Save'}</button>}
       </div>
 
@@ -160,6 +225,12 @@ export default function PhotoStudio() {
               <b className="text-neutral-700 dark:text-neutral-200">Drop a photo here</b>
               <span>or click to browse your device</span>
               <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFiles(e.target.files)} />
+              
+              <div className="flex flex-col gap-2 mt-4">
+                <button onClick={(e) => { e.preventDefault(); importFromDrive(); }} className="px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-medium hover:bg-blue-700">
+                  ☁️ Import from Google Drive
+                </button>
+              </div>
             </label>
           ) : (
             <div ref={wrapRef} className="relative inline-block shadow-xl checker">
@@ -174,6 +245,16 @@ export default function PhotoStudio() {
               Change photo
               <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFiles(e.target.files)} />
             </label>
+            
+            <div className="flex flex-col gap-2">
+              <button onClick={importFromDrive} className="btn bg-blue-600 text-white text-xs w-full">
+                ☁️ Import from Drive
+              </button>
+              <button onClick={exportToDrive} className="btn bg-blue-600 text-white text-xs w-full">
+                ☁️ Export to Drive
+              </button>
+            </div>
+
             {[['Brightness', brightness, setBrightness], ['Contrast', contrast, setContrast], ['Saturation', saturation, setSaturation]].map(([label, val, setter]) => (
               <div key={label}>
                 <div className="flex justify-between text-xs mb-1"><span className="font-mono uppercase text-neutral-400">{label}</span><span>{val}</span></div>

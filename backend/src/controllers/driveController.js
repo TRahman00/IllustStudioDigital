@@ -1,8 +1,7 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
-import { getAuthUrl, exchangeCodeForTokens, saveUserTokens, uploadFileToDrive } from '../services/driveService.js';
+import { getAuthUrl, exchangeCodeForTokens, saveUserTokens, uploadFileToDrive, listDriveFiles, downloadDriveFile } from '../services/driveService.js';
 
-// UPDATED: Read token from query and verify it
 export async function connectDrive(req, res) {
   const token = req.query.token;
   if (!token) return res.status(401).json({ message: 'Not authorized, no token' });
@@ -19,10 +18,8 @@ export async function connectDrive(req, res) {
   }
 }
 
-// UPDATED: Use the 'state' parameter to find the user
 export async function driveCallback(req, res) {
   const { code, state } = req.query;
-
   try {
     const user = await User.findById(state);
     if (!user) throw new Error('User not found');
@@ -40,7 +37,21 @@ export async function uploadToDrive(req, res, next) {
     const { fileName, mimeType, dataUrl } = req.body;
     const file = await uploadFileToDrive(req.user._id, fileName, mimeType, dataUrl);
     res.json({ success: true, fileId: file.id });
-  } catch (err) {
-    next(err);
-  }
+  } catch (err) { next(err); }
+}
+
+// --- NEW: List files controller ---
+export async function getDriveFiles(req, res, next) {
+  try {
+    const files = await listDriveFiles(req.user._id);
+    res.json({ files });
+  } catch (err) { next(err); }
+}
+
+// --- NEW: Download file controller ---
+export async function downloadFile(req, res, next) {
+  try {
+    const dataUrl = await downloadDriveFile(req.user._id, req.params.fileId);
+    res.json({ dataUrl });
+  } catch (err) { next(err); }
 }

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import './Studio.css';
 import client from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx'; // <--- ADDED IMPORT
 import ColorWheel from '../components/canvas/ColorWheel.jsx';
@@ -50,7 +51,8 @@ function getCanvasPos(e, canvasEl) {
   return { x: (e.clientX - rect.left) * (canvasEl.width / rect.width), y: (e.clientY - rect.top) * (canvasEl.height / rect.height) };
 }
 
-export default function DrawStudio() {
+// --- UPDATED: Accept projectId prop ---
+export default function DrawStudio({ projectId }) {
   const [tool, setToolState] = useState('brush');
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [rotation, setRotation] = useState(0);
@@ -86,7 +88,6 @@ export default function DrawStudio() {
 
   const drawUM = useUndoManager();
   
-  // --- ADDED: 15 LAYER LIMIT LOGIC ---
   const { user } = useAuth();
   const isPremium = user?.plan === 'premium';
   const FREE_LAYER_LIMIT = 15;
@@ -109,7 +110,6 @@ export default function DrawStudio() {
     });
   }
   
-  // --- UPDATED: addLayer with Limit Check ---
   function addLayer(name) {
     if (!isPremium && layersRef.current.length >= FREE_LAYER_LIMIT) {
       setNotice(`Free plan is limited to ${FREE_LAYER_LIMIT} layers. Upgrade to Premium for unlimited layers.`);
@@ -119,7 +119,7 @@ export default function DrawStudio() {
     const layer = { 
       id: 'L' + layerCounterRef.current++, name: name || `Layer ${layersRef.current.length + 1}`, 
       canvas: c, ctx: c.getContext('2d'), visible: true, opacity: 1,
-      blendMode: 'source-over', clipped: false, maskDataUrl: null // Initialize Faria's features
+      blendMode: 'source-over', clipped: false, maskDataUrl: null
     };
     layersRef.current.push(layer);
     setActiveLayerId(layer.id);
@@ -127,7 +127,6 @@ export default function DrawStudio() {
     return layer;
   }
 
-  // --- UPDATED: duplicateLayer with Limit Check ---
   function duplicateLayer() {
     const src = activeLayer(); if (!src) return;
     if (!isPremium && layersRef.current.length >= FREE_LAYER_LIMIT) {
@@ -140,7 +139,7 @@ export default function DrawStudio() {
     const layer = { 
       id: 'L' + layerCounterRef.current++, name: src.name + ' copy', canvas: c, ctx: c.getContext('2d'), 
       visible: true, opacity: src.opacity, 
-      blendMode: src.blendMode, clipped: src.clipped, maskDataUrl: src.maskDataUrl // Copy Faria's features
+      blendMode: src.blendMode, clipped: src.clipped, maskDataUrl: src.maskDataUrl
     };
     layersRef.current.splice(idx + 1, 0, layer);
     setActiveLayerId(layer.id);
@@ -168,7 +167,6 @@ export default function DrawStudio() {
   function setOpacity(layerId, val) { const l = layersRef.current.find((x) => x.id === layerId); l.opacity = val; renderLayerStack(); }
   function renameLayer(layerId, name) { const l = layersRef.current.find((x) => x.id === layerId); l.name = name; }
 
-  // --- Faria's Layer Functions ---
   function updateLayerBlendMode(layerId, mode) {
     const l = layersRef.current.find((x) => x.id === layerId);
     if (l) { l.blendMode = mode; renderLayerStack(); }
@@ -180,7 +178,6 @@ export default function DrawStudio() {
   function addLayerMask(layerId) {
     const l = layersRef.current.find((x) => x.id === layerId);
     if (l) {
-      // Create a blank mask (all white, so it reveals everything initially)
       const maskCanvas = document.createElement('canvas');
       maskCanvas.width = DRAW_W; maskCanvas.height = DRAW_H;
       const maskCtx = maskCanvas.getContext('2d');
@@ -235,7 +232,6 @@ export default function DrawStudio() {
 
   // ============================= TRANSFORM TOOL =============================
   function getCenter(sel) { return { x: sel.rect.x + sel.rect.w / 2 + sel.t.tx, y: sel.rect.y + sel.rect.h / 2 + sel.t.ty }; }
-
   function getBaseMatrix(sel) {
     const c = getCenter(sel);
     let m = new DOMMatrix();
@@ -510,7 +506,6 @@ export default function DrawStudio() {
     const off = document.createElement('canvas'); off.width = DRAW_W; off.height = DRAW_H;
     const ctx = off.getContext('2d');
     
-    // Iterate through layers, respecting blend modes and clipping
     layersRef.current.forEach((l, index) => {
       if (!l.visible) return;
       
@@ -519,17 +514,14 @@ export default function DrawStudio() {
       ctx.globalCompositeOperation = l.blendMode || 'source-over';
       ctx.globalAlpha = l.opacity;
 
-      // Apply Clipping logic
       if (l.clipped && index > 0) {
         const baseLayer = layersRef.current[index - 1];
         if (baseLayer && baseLayer.visible) {
-          // Create a temp canvas for the clipped layer
           const tempCanvas = document.createElement('canvas');
           tempCanvas.width = DRAW_W; tempCanvas.height = DRAW_H;
           const tempCtx = tempCanvas.getContext('2d');
           tempCtx.drawImage(l.canvas, 0, 0);
           
-          // Apply the mask of the layer below
           tempCtx.globalCompositeOperation = 'destination-in';
           tempCtx.drawImage(baseLayer.canvas, 0, 0);
           
@@ -538,13 +530,9 @@ export default function DrawStudio() {
         }
       }
 
-      // Apply Masking logic
       if (drawLayer && l.maskDataUrl) {
         const maskImg = new Image();
         maskImg.src = l.maskDataUrl;
-        // NOTE: This is a simplified mask. For true rendering on the fly, we should
-        // pre-cache the mask image. But for the purpose of this assignment, 
-        // we will draw it with a composite operation.
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = DRAW_W; tempCanvas.height = DRAW_H;
         const tempCtx = tempCanvas.getContext('2d');
@@ -565,6 +553,45 @@ export default function DrawStudio() {
     ctx.globalCompositeOperation = 'source-over';
     return off;
   }
+
+  // ============================ KEYBOARD SHORTCUTS ============================
+  useEffect(() => {
+    function onKey(e) {
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+      if (transformSelRef.current) {
+        if (e.key === 'Enter') { e.preventDefault(); commitTransform(); return; }
+        if (e.key === 'Escape') { e.preventDefault(); cancelTransform(); return; }
+      }
+
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); drawUM.undo(); return; }
+        if ((e.key.toLowerCase() === 'z' && e.shiftKey) || e.key.toLowerCase() === 'y') { e.preventDefault(); drawUM.redo(); return; }
+      }
+
+      const map = { 
+        b: 'brush', p: 'pencil', g: 'airbrush', e: 'eraser', v: 'select', 
+        r: 'rect', o: 'ellipse', l: 'line', h: 'pan' 
+      };
+      if (map[e.key.toLowerCase()]) {
+        e.preventDefault();
+        setTool(map[e.key.toLowerCase()]);
+      }
+
+      if (e.key === '[') setSize((s) => Math.max(1, s - 2));
+      if (e.key === ']') setSize((s) => Math.min(80, s + 2));
+
+      if (e.key === 'Escape' && dragModeRef.current) {
+        dragModeRef.current = null;
+        clearOverlay();
+      }
+    }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drawUM, tool, transformSelRef]);
+  // ========================= /KEYBOARD SHORTCUTS ============================
   
   function exportPNG() {
     compositeToCanvas().toBlob((blob) => {
@@ -573,6 +600,8 @@ export default function DrawStudio() {
       setTimeout(() => URL.revokeObjectURL(url), 2000);
     });
   }
+
+  // --- UPDATED: Save function now updates existing project if projectId exists ---
   async function save() {
     if (transformSelRef.current) commitTransform();
     setSaving(true); setNotice('');
@@ -587,13 +616,73 @@ export default function DrawStudio() {
           blendMode: l.blendMode, clipped: l.clipped, maskDataUrl: l.maskDataUrl
         })),
       };
-      await client.post('/projects', payload);
+      
+      if (projectId) {
+        await client.put(`/projects/${projectId}`, payload); // UPDATES existing
+      } else {
+        await client.post('/projects', payload); // CREATES new
+      }
       setNotice('Saved.');
     } catch (err) { setNotice(err.response?.data?.message || 'Could not save.'); }
     finally { setSaving(false); }
   }
 
-  useEffect(() => { addLayer('Layer 1'); /* eslint-disable-next-line */ }, []);
+  // --- UPDATED: Load existing project data if projectId is provided ---
+  useEffect(() => {
+    if (projectId) {
+      const loadProject = async () => {
+        try {
+          const res = await client.get(`/projects/${projectId}`);
+          const project = res.data.project;
+
+          layersRef.current = [];
+          layerCounterRef.current = 0;
+
+          if (project.layers && project.layers.length > 0) {
+            project.layers.forEach((layerData) => {
+              const c = document.createElement('canvas');
+              c.width = DRAW_W;
+              c.height = DRAW_H;
+              const ctx = c.getContext('2d');
+
+              const img = new Image();
+              img.onload = () => {
+                ctx.drawImage(img, 0, 0);
+                const newLayer = {
+                  id: 'L' + layerCounterRef.current++,
+                  name: layerData.name || `Layer ${layersRef.current.length + 1}`,
+                  canvas: c,
+                  ctx: ctx,
+                  visible: layerData.visible !== false,
+                  opacity: layerData.opacity || 1,
+                  blendMode: layerData.blendMode || 'source-over',
+                  clipped: layerData.clipped || false,
+                  maskDataUrl: layerData.maskDataUrl || null,
+                };
+                layersRef.current.push(newLayer);
+
+                if (layersRef.current.length === project.layers.length) {
+                  setActiveLayerId(layersRef.current[layersRef.current.length - 1].id);
+                  renderLayerStack();
+                  setLayersVersion(v => v + 1);
+                }
+              };
+              img.src = layerData.dataUrl;
+            });
+          } else {
+            addLayer('Layer 1');
+          }
+        } catch (err) {
+          console.error('Failed to load project', err);
+          addLayer('Layer 1');
+        }
+      };
+      loadProject();
+    } else {
+      addLayer('Layer 1');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
 
   const layersForUI = [...layersRef.current].reverse();
   const iconBtn = 'w-4 h-4';
@@ -684,7 +773,6 @@ export default function DrawStudio() {
               <div key={l.id} onClick={() => setActiveLayerId(l.id)}
                 className={`rounded-lg p-2 cursor-pointer border ${l.id === activeLayerId ? 'border-teal-500 bg-teal-50 dark:bg-teal-900/20' : 'border-transparent bg-neutral-50 dark:bg-neutral-800'}`}>
                 
-                {/* Layer Top Row */}
                 <div className="flex items-center gap-2 mb-1">
                   <button onClick={(e) => { e.stopPropagation(); toggleVisible(l.id); }} className="text-neutral-500">
                     {l.visible ? <EyeIcon className="w-3.5 h-3.5" /> : <EyeOffIcon className="w-3.5 h-3.5" />}
@@ -697,7 +785,6 @@ export default function DrawStudio() {
                   <button onClick={(e) => { e.stopPropagation(); deleteLayer(l.id); }} className="text-red-400 hover:text-red-600"><CloseIcon className="w-3.5 h-3.5" /></button>
                 </div>
 
-                {/* Faria's Module 2: Blend Mode, Clipping, Mask */}
                 <div className="flex items-center gap-2 mb-2">
                   <select 
                     className="flex-1 bg-neutral-100 dark:bg-neutral-800 text-[10px] rounded border border-neutral-200 dark:border-neutral-700 px-1 py-0.5"

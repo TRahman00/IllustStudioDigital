@@ -4,15 +4,13 @@ import User from '../models/User.js';
 const RECENT_WORKS_LIMIT = 9;
 
 // GET /api/dashboard/recent-works
-// Powers the "Recent Works" grid on the dashboard. Illustration-type projects only,
-// since those are what the drawing app (DrawStudio) can open and continue editing.
-// does not work rn because api connections are not ready, will be connected to google drive
+// Powers the "Recent Works" grid on the dashboard. Shows all project types now!
 export async function getRecentWorks(req, res, next) {
   try {
-    const works = await Project.find({ owner: req.user._id, type: 'illustration' })
+    const works = await Project.find({ owner: req.user._id }) // <--- Removed type filter
       .sort({ updatedAt: -1 })
       .limit(RECENT_WORKS_LIMIT)
-      .select('title thumbnail updatedAt createdAt');
+      .select('title thumbnail updatedAt createdAt type'); // <--- Added 'type'
     res.json({ works });
   } catch (err) { next(err); }
 }
