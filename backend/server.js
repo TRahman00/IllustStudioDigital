@@ -16,7 +16,7 @@ import cadRoutes from './src/routes/cadRoutes.js';
 import driveRoutes from './src/routes/driveRoutes.js';
 import subscriptionRoutes from './src/routes/subscriptionRoutes.js';
 import { notFound, errorHandler } from './src/middleware/errorHandler.js';
-
+import adminRoutes from './src/routes/adminRoutes.js';
 dotenv.config();
 connectDB();
 
@@ -41,7 +41,7 @@ app.use('/api/cad', cadRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/drive', driveRoutes);
 app.use('/api/subscription', subscriptionRoutes); // <--- Now it's BEFORE the 404 handler!
-
+app.use('/api/admin', adminRoutes);
 // NOT FOUND AND ERROR HANDLER MUST BE AT THE VERY END!
 app.use(notFound);
 app.use(errorHandler);

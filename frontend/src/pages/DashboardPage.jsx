@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useTheme } from '../context/ThemeContext.jsx';
 import client from '../api/client.js';
@@ -77,6 +77,14 @@ export default function DashboardPage() {
           </div>
           
           <div className="new-actions">
+            {user?.role === 'admin' && (
+              <Link 
+                to="/admin" 
+                className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-neutral-100 dark:bg-[#1A2A27] border border-neutral-300 dark:border-[#1D2926] text-sm font-semibold hover:bg-neutral-200 dark:hover:bg-[#1D2926] transition"
+              >
+                Admin Panel
+              </Link>
+            )}
             <button className="btn" onClick={launchNewPhoto}>Edit a photo</button>
             <button className="btn" onClick={launchNewAnimate}>New animation</button>
             <button className="btn" onClick={handleConnectDrive}>

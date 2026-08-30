@@ -9,6 +9,7 @@ import './index.css';
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
+      {/* THE ORDER MATTERS! ThemeProvider wraps AuthProvider */}
       <ThemeProvider>
         <AuthProvider>
           <App />
