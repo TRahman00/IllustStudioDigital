@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+h1, h2, h3 { @apply font-display; }
+.btn { @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition; }
+.btn-primary { @apply bg-teal-600 border-teal-600 text-white hover:bg-teal-700; }
+.btn-icon { @apply !px-2 !py-2; }
+.input { @apply w-full px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-sm; }
+
+::selection { background: #2DD4BF; color: #0B3B37; }
+input[type=range] { accent-color: #14B8A6; }
+input[type=checkbox] { accent-color: #14B8A6; }
+
+.checker {
+  background-image:
+    linear-gradient(45deg, #00000010 25%, transparent 25%),
+    linear-gradient(-45deg, #00000010 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #00000010 75%),
+    linear-gradient(-45deg, transparent 75%, #00000010 75%);
+  background-size: 18px 18px;
+  background-position: 0 0, 0 9px, 9px -9px, -9px 0;
+}
