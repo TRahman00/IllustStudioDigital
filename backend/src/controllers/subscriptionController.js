@@ -2,6 +2,7 @@ import Stripe from 'stripe';
 import User from '../models/User.js';
 import { sendReceiptEmail } from '../services/emailService.js';
 
+// Use the Stripe instance directly with the secret key
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
 export async function createCheckoutSession(req, res, next) {
