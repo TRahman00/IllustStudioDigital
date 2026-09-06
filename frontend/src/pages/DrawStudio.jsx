@@ -487,7 +487,7 @@ export default function DrawStudio({ projectId }) {
         if (e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); drawUM.undo(); return; }
         if ((e.key.toLowerCase() === 'z' && e.shiftKey) || e.key.toLowerCase() === 'y') { e.preventDefault(); drawUM.redo(); return; }
       }
-      const map = { b: 'brush', p: 'pencil', g: 'airbrush', e: 'eraser', v: 'select', r: 'rect', o: 'ellipse', l: 'line' };
+      const map = { b: 'brush', p: 'pencil', i: 'airbrush', e: 'eraser', v: 'select', r: 'rect', o: 'ellipse', l: 'line' };
       if (map[e.key.toLowerCase()]) setTool(map[e.key.toLowerCase()]);
       if (e.key === '[') setSize((s) => Math.max(1, s - 2));
       if (e.key === ']') setSize((s) => Math.min(80, s + 2));
