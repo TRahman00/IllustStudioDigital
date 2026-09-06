@@ -571,7 +571,7 @@ export default function DrawStudio({ projectId }) {
       }
 
       const map = { 
-        b: 'brush', p: 'pencil', g: 'airbrush', e: 'eraser', v: 'select', 
+        b: 'brush', p: 'pencil', i: 'airbrush', e: 'eraser', v: 'select', 
         r: 'rect', o: 'ellipse', l: 'line', h: 'pan' 
       };
       if (map[e.key.toLowerCase()]) {

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import client from '../api/client.js';
 import { UploadIcon } from '../components/icons/Icons.jsx';
 import './Studio.css';
+
 const MAX_W = 900, MAX_H = 600;
 
 export default function PhotoStudio({ projectId }) {
@@ -33,14 +34,22 @@ export default function PhotoStudio({ projectId }) {
     ctx.filter = 'none';
   }
 
+  // 1. Initial load (Set canvas size when image is first loaded)
   useEffect(() => {
     if (hasImage && canvasRef.current && baseImageRef.current) {
       const { w, h } = origSizeRef.current;
       canvasRef.current.width = w;
       canvasRef.current.height = h;
-      requestAnimationFrame(renderPhoto);
+      renderPhoto();
     }
   }, [hasImage]);
+
+  // 2. Update visuals whenever sliders change (THE FIX!)
+  useEffect(() => {
+    if (hasImage) {
+      renderPhoto();
+    }
+  }, [brightness, contrast, saturation]);
 
   // --- Load existing photo if projectId is passed ---
   useEffect(() => {
@@ -80,7 +89,7 @@ export default function PhotoStudio({ projectId }) {
     const { w, h } = origSizeRef.current;
     canvasRef.current.width = w; canvasRef.current.height = h;
     setBrightness(0); setContrast(0); setSaturation(0);
-    requestAnimationFrame(renderPhoto);
+    renderPhoto();
   }
 
   function downloadPNG() {
@@ -180,14 +189,15 @@ export default function PhotoStudio({ projectId }) {
     const canvas = canvasRef.current;
     const r = clampRect({ x: parseFloat(el.style.left), y: parseFloat(el.style.top), w: parseFloat(el.style.width), h: parseFloat(el.style.height) }, canvas);
     const x = Math.round(r.x), y = Math.round(r.y), w = Math.round(r.w), h = Math.round(r.h);
-    const imgData = canvas.getContext('2d').getImageData(x, y, w, h);
+    const ctx = canvas.getContext('2d');
+    const imgData = ctx.getImageData(x, y, w, h);
     const cropped = document.createElement('canvas'); cropped.width = w; cropped.height = h;
     cropped.getContext('2d').putImageData(imgData, 0, 0);
     baseImageRef.current = cropped;
     canvas.width = w; canvas.height = h;
     setBrightness(0); setContrast(0); setSaturation(0);
     exitCrop();
-    requestAnimationFrame(renderPhoto);
+    renderPhoto(); // <--- INSTANT update, no requestAnimationFrame delay!
   }
 
   async function save() {
