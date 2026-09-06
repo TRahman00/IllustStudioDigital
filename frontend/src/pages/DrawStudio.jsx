@@ -65,7 +65,7 @@ export default function DrawStudio({ projectId }) {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState('');
   const [hasSelection, setHasSelection] = useState(false);
-
+  const [showShortcuts, setShowShortcuts] = useState(false);
   const toolRef = useRef(tool), colorRef = useRef(color), sizeRef = useRef(size), shapeFillRef = useRef(shapeFill);
   useEffect(() => { toolRef.current = tool; }, [tool]);
   useEffect(() => { colorRef.current = color; }, [color]);
@@ -727,6 +727,7 @@ export default function DrawStudio({ projectId }) {
         <div className="flex-1" />
         {notice && <span className="text-xs text-neutral-500">{notice}</span>}
         <button disabled={saving} className="btn !py-1 text-xs" onClick={save}>{saving ? 'Saving…' : 'Save'}</button>
+        <button className="btn !py-1 text-xs" onClick={() => setShowShortcuts(!showShortcuts)}>Shortcuts</button>
         <button className="btn btn-primary !py-1 text-xs" onClick={exportPNG}>Export PNG</button>
       </div>
 
